@@ -1,7 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { Layout, Menu, Avatar, Button } from 'antd';
 import { SettingOutlined, LogoutOutlined } from '@ant-design/icons';
-import { IconCalendar, IconMessages, IconPhoto } from '@tabler/icons-react';
+import { IconCalendar, IconLayoutList, IconMessages, IconPhoto } from '@tabler/icons-react';
 import { trpc } from '../lib/trpc';
 import { useStore } from '../hooks/useStore';
 
@@ -9,11 +9,12 @@ interface AppShellProps {
   messagesPanel: ReactNode;
   photostreamPanel: ReactNode;
   calendarPanel: ReactNode;
+  forumsPanel: ReactNode;
 }
 
-type NavItem = 'messages' | 'photostream' | 'calendar' | 'settings';
+type NavItem = 'messages' | 'photostream' | 'calendar' | 'forums' | 'settings';
 
-export function AppShell({ messagesPanel, photostreamPanel, calendarPanel }: AppShellProps) {
+export function AppShell({ messagesPanel, photostreamPanel, calendarPanel, forumsPanel }: AppShellProps) {
   const [activeNav, setActiveNav] = useState<NavItem>('messages');
   const username = useStore((s) => s.auth.username);
   const logoutMutation = trpc.logout.useMutation();
@@ -24,6 +25,7 @@ export function AppShell({ messagesPanel, photostreamPanel, calendarPanel }: App
     { key: 'messages', icon: <IconMessages size={18} />, label: 'Messages' },
     { key: 'photostream', icon: <IconPhoto size={18} />, label: 'Photostream' },
     { key: 'calendar', icon: <IconCalendar size={18} />, label: 'Calendar' },
+    { key: 'forums', icon: <IconLayoutList size={18} />, label: 'Forums' },
     { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
   ];
 
@@ -71,6 +73,10 @@ export function AppShell({ messagesPanel, photostreamPanel, calendarPanel }: App
         ) : activeNav === 'calendar' ? (
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {calendarPanel}
+          </div>
+        ) : activeNav === 'forums' ? (
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {forumsPanel}
           </div>
         ) : (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A7490', fontSize: 14 }}>

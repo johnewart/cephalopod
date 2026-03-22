@@ -1,12 +1,23 @@
 import { router, publicProcedure } from './trpc';
 import { z } from 'zod';
-import { AuthService, EventsService, FezService, OpenAPI, PhotostreamService } from 'twitarr-ts';
+import { AuthService, EventsService, FezService, ForumService, OpenAPI, PhotostreamService } from 'twitarr-ts';
 import { store } from '../store';
 
 /** Configure OpenAPI from store state before API calls */
 function configureOpenAPI(baseUrl: string, token?: string | null) {
   OpenAPI.BASE = baseUrl ? `${baseUrl.replace(/\/$/, '')}/api/v3` : '';
   OpenAPI.TOKEN = token ?? undefined;
+}
+
+/** Swiftarr UUID path params are often compared lowercase; URLs may carry uppercase from JSON. */
+function normalizeSwiftarrUuid(id: string): string {
+  const t = id.trim();
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(t)
+  ) {
+    return t.toLowerCase();
+  }
+  return t;
 }
 
 export const appRouter = router({
@@ -200,6 +211,49 @@ export const appRouter = router({
         input?.needsPhotographer,
         input?.hasPhotographer
       );
+      return result as unknown;
+    }),
+
+  // ---- Forums ----
+  forumCategories: publicProcedure.query(async () => {
+    const { baseUrl } = store.getState().server;
+    const { token } = store.getState().auth;
+    if (!baseUrl || !token) throw new Error('Not authenticated');
+    configureOpenAPI(baseUrl, token);
+    const result = await ForumService.forumCategories();
+    return result as unknown;
+  }),
+
+  forumCategoryForums: publicProcedure
+    .input(z.object({ categoryId: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const result = await ForumService.forumCategoryForums(normalizeSwiftarrUuid(input.categoryId));
+      return result as unknown;
+    }),
+
+  forumGet: publicProcedure
+    .input(z.object({ forumId: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const result = await ForumService.forumGet(normalizeSwiftarrUuid(input.forumId));
+      return result as unknown;
+    }),
+
+  forumPostGet: publicProcedure
+    .input(z.object({ postId: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const result = await ForumService.forumPostGet(normalizeSwiftarrUuid(input.postId));
       return result as unknown;
     }),
 });

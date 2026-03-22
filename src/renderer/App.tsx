@@ -5,6 +5,7 @@ import { AppShell } from './components/AppShell';
 import { SeamailView } from './components/SeamailView';
 import { PhotostreamView } from './components/PhotostreamView';
 import { EventsCalendarView } from './components/EventsCalendarView';
+import { ForumsView } from './components/ForumsView';
 
 const { Title } = Typography;
 
@@ -35,6 +36,7 @@ export default function App() {
           messagesPanel={<SeamailView />}
           photostreamPanel={<PhotostreamView />}
           calendarPanel={<EventsCalendarView />}
+          forumsPanel={<ForumsView />}
         />
       )}
     </div>
