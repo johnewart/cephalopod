@@ -72,3 +72,303 @@ html, body, #root {
 .ant-form-item-label > label {
   color: #9A9D9A !important;
 }
+
+/* Event calendar — classic month grid (Ant Design Calendar fullscreen) */
+.schedule-calendar-wrap {
+  border: 1px solid #3d4149;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #24272e;
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.4);
+}
+
+.schedule-calendar-wrap .ant-picker-calendar {
+  background: transparent;
+}
+
+.schedule-calendar-wrap .ant-picker-calendar-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid #3d4149;
+  background: #2a2d34;
+  justify-content: space-between;
+}
+
+.schedule-calendar-wrap .ant-picker-calendar .ant-select-selector,
+.schedule-calendar-wrap .ant-picker-calendar .ant-radio-button-wrapper {
+  background: #1b1d23 !important;
+  border-color: #3d4149 !important;
+  color: #efece2 !important;
+}
+
+.schedule-calendar-wrap .ant-picker-calendar .ant-radio-button-wrapper-checked {
+  background: rgba(173, 253, 67, 0.18) !important;
+  border-color: #adfd43 !important;
+  color: #adfd43 !important;
+}
+
+.schedule-calendar-wrap .ant-picker-panel {
+  background: #24272e !important;
+  border: 0 !important;
+}
+
+.schedule-calendar-wrap .ant-picker-panel .ant-picker-body {
+  padding: 0 !important;
+}
+
+.schedule-calendar-wrap .ant-picker-content {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.schedule-calendar-wrap .ant-picker-content thead > tr > th {
+  padding: 10px 8px;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #9a9d9a;
+  border-bottom: 1px solid #3d4149;
+  border-right: 1px solid #353942;
+  background: #2a2d34;
+}
+
+.schedule-calendar-wrap .ant-picker-content thead > tr > th:last-child {
+  border-right: none;
+}
+
+.schedule-calendar-wrap .ant-picker-content tbody > tr > td {
+  border-right: 1px solid #353942;
+  border-bottom: 1px solid #353942;
+  vertical-align: top;
+  background: #1f2228;
+}
+
+.schedule-calendar-wrap .ant-picker-content tbody > tr > td:last-child {
+  border-right: none;
+}
+
+.schedule-calendar-wrap .ant-picker-cell {
+  padding: 0 !important;
+}
+
+.schedule-calendar-wrap .ant-picker-cell .ant-picker-cell-inner {
+  min-height: 88px;
+  width: 100% !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  padding: 8px 10px !important;
+  display: flex !important;
+  flex-direction: column;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  color: #efece2 !important;
+  background: transparent !important;
+}
+
+/* Ant Design Calendar always renders a padded day in .ant-picker-calendar-date-value and puts
+   cellRender output in .ant-picker-calendar-date-content — hide the built-in value so only one day shows */
+.schedule-calendar-wrap .ant-picker-calendar-date-value {
+  display: none !important;
+}
+
+/* Day number from cellRender (single source in -date-content) */
+.schedule-calendar-wrap .schedule-calendar-daynum {
+  color: inherit;
+  font-size: 14px;
+}
+
+/* Calendar + Gantt tabs fill available height */
+.events-calendar-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.events-calendar-tabs > .ant-tabs-nav {
+  flex-shrink: 0;
+  margin: 0 0 12px 0;
+}
+
+.events-calendar-tabs > .ant-tabs-content-holder {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.events-calendar-tabs .ant-tabs-content {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex !important;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.events-calendar-tabs .ant-tabs-tabpane {
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.events-calendar-tabs .ant-tabs-tabpane-active {
+  display: flex !important;
+  flex-direction: column;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow: hidden;
+}
+
+/* Month view: grid keeps row height bounded so the event list can scroll (flex-wrap was growing with list content) */
+.schedule-calendar-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(280px, 3fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.schedule-calendar-split > .schedule-calendar-wrap {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.schedule-calendar-split > .schedule-calendar-day-list {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 960px) {
+  .schedule-calendar-split {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: auto;
+  }
+}
+
+.schedule-calendar-event-scroll {
+  min-height: 0;
+}
+
+/* Day Gantt timeline */
+.events-gantt-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid #3d4149;
+  border-radius: 12px;
+  background: #24272e;
+  padding: 12px 16px 16px;
+  overflow: hidden;
+}
+
+.events-gantt-chart {
+  position: relative;
+  flex: 1;
+  min-height: 220px;
+  border: 1px solid #353942;
+  border-radius: 8px;
+  background: #1f2228;
+  overflow: auto;
+}
+
+.events-gantt-chart-inner {
+  position: relative;
+  min-height: 100%;
+  min-width: 100%;
+}
+
+.events-gantt-hour-line {
+  position: absolute;
+  top: 28px;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+}
+
+.events-gantt-hour-label {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: #9a9d9a;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.events-gantt-bar {
+  position: absolute;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1b1d23;
+  background: linear-gradient(180deg, #c8f76a 0%, #adfd43 100%);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.events-gantt-bar:focus-visible {
+  outline: 2px solid #adfd43;
+  outline-offset: 2px;
+}
+
+.events-gantt-bar-scheduled {
+  box-shadow: 0 0 0 2px rgba(173, 253, 67, 0.55);
+}
+
+.events-gantt-bar-muted {
+  background: linear-gradient(180deg, #5a5d66 0%, #3d4149 100%);
+  color: #efece2;
+}
+
+.schedule-calendar-wrap .ant-picker-cell:hover .ant-picker-cell-inner {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.schedule-calendar-wrap .ant-picker-cell-in-view.ant-picker-cell-today .ant-picker-cell-inner::before {
+  border-color: #adfd43 !important;
+}
+
+.schedule-calendar-wrap .ant-picker-cell-selected:not(.ant-picker-cell-disabled) .ant-picker-cell-inner,
+.schedule-calendar-wrap .ant-picker-cell-in-view.ant-picker-cell-selected .ant-picker-cell-inner {
+  background: rgba(173, 253, 67, 0.2) !important;
+  color: #efece2 !important;
+}
+
+.schedule-calendar-wrap .ant-picker-cell-disabled .ant-picker-cell-inner {
+  color: #5c5f66 !important;
+  background: #1a1c21 !important;
+}
+
+.schedule-calendar-wrap .ant-picker-cell-in-view .ant-picker-cell-inner {
+  font-weight: 600;
+}
+
+.schedule-calendar-day-list {
+  border: 1px solid #3d4149;
+  border-radius: 12px;
+  background: #24272e;
+  padding: 16px;
+  min-height: 0;
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Let Ant List shrink inside the scroll region */
+.schedule-calendar-day-list .schedule-calendar-event-list {
+  min-height: 0;
+}

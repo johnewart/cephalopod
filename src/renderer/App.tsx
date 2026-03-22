@@ -4,6 +4,7 @@ import { LoginForm } from './components/LoginForm';
 import { AppShell } from './components/AppShell';
 import { SeamailView } from './components/SeamailView';
 import { PhotostreamView } from './components/PhotostreamView';
+import { EventsCalendarView } from './components/EventsCalendarView';
 
 const { Title } = Typography;
 
@@ -30,7 +31,11 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <AppShell messagesPanel={<SeamailView />} photostreamPanel={<PhotostreamView />} />
+        <AppShell
+          messagesPanel={<SeamailView />}
+          photostreamPanel={<PhotostreamView />}
+          calendarPanel={<EventsCalendarView />}
+        />
       )}
     </div>
   );

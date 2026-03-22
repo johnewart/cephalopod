@@ -1,6 +1,6 @@
 import { router, publicProcedure } from './trpc';
 import { z } from 'zod';
-import { AuthService, FezService, OpenAPI, PhotostreamService } from 'twitarr-ts';
+import { AuthService, EventsService, FezService, OpenAPI, PhotostreamService } from 'twitarr-ts';
 import { store } from '../store';
 
 /** Configure OpenAPI from store state before API calls */
@@ -159,6 +159,46 @@ export const appRouter = router({
         input?.limit,
         input?.eventId,
         input?.locationName
+      );
+      return result as unknown;
+    }),
+
+  // ---- Events (schedule) ----
+  eventsList: publicProcedure
+    .input(
+      z
+        .object({
+          cruiseday: z.number().optional(),
+          day: z.string().optional(),
+          date: z.string().optional(),
+          time: z.string().optional(),
+          type: z.enum(['official', 'shadow']).optional(),
+          search: z.string().optional(),
+          location: z.string().optional(),
+          following: z.boolean().optional(),
+          dayplanner: z.boolean().optional(),
+          needsPhotographer: z.boolean().optional(),
+          hasPhotographer: z.boolean().optional(),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const result = await EventsService.eventsList(
+        input?.cruiseday,
+        input?.day,
+        input?.date,
+        input?.time,
+        input?.type,
+        input?.search,
+        input?.location,
+        input?.following,
+        input?.dayplanner,
+        input?.needsPhotographer,
+        input?.hasPhotographer
       );
       return result as unknown;
     }),
