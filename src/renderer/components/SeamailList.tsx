@@ -101,8 +101,8 @@ export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
         const fezId = fez.fezID ?? fez.id ?? String(i);
         const isSelected = selectedFezId === fezId;
         const unread = seamailUnreadCount(fez);
-        const titleColor = isSelected ? '#ADFD43' : '#EFECE2';
-        const iconColor = isSelected ? '#ADFD43' : '#7A7490';
+        const titleColor = isSelected ? '#6F458F' : '#EFECE2';
+        const iconColor = isSelected ? '#6F458F' : '#7A7490';
         const isDm = isDirectMessageRow(fez, currentUsername);
         const rowTitle = seamailRowTitle(fez, currentUsername);
         const MessageIcon = isDm ? IconMessageCircle : IconMessages;
@@ -115,8 +115,8 @@ export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
               padding: '10px 12px',
               margin: '0 4px 4px',
               borderRadius: 8,
-              background: isSelected ? 'rgba(173, 253, 67, 0.14)' : 'transparent',
-              border: isSelected ? '1px solid rgba(173, 253, 67, 0.35)' : '1px solid transparent',
+              background: isSelected ? 'rgba(111, 69, 143, 0.14)' : 'transparent',
+              border: isSelected ? '1px solid rgba(111, 69, 143, 0.35)' : '1px solid transparent',
               color: titleColor,
             }}
             onClick={() => onSelectFez(fezId)}
@@ -153,8 +153,8 @@ export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
                     height: 22,
                     padding: unread > 9 ? '0 7px' : '0 6px',
                     borderRadius: 11,
-                    background: '#ADFD43',
-                    color: '#1B1D23',
+                    background: '#6F458F',
+                    color: '#EFECE2',
                     fontSize: 12,
                     fontWeight: 700,
                     lineHeight: '22px',

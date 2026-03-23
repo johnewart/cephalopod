@@ -155,7 +155,7 @@ export function PhotostreamView() {
           gap: 8,
         }}
       >
-        <IconPhoto size={18} stroke={1.5} style={{ color: '#ADFD43' }} />
+        <IconPhoto size={18} stroke={1.5} style={{ color: '#6F458F' }} />
         Photostream
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>

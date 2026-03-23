@@ -1,4 +1,4 @@
-import { Typography } from 'antd';
+import { Avatar, Typography } from 'antd';
 import { useStore } from './hooks/useStore';
 import { LoginForm } from './components/LoginForm';
 import { AppShell } from './components/AppShell';
@@ -17,7 +17,14 @@ export default function App() {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#16171C', color: '#EFECE2' }}>
       {!isAuthenticated ? (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32, padding: 40 }}>
-          <Title level={2} style={{ margin: 0, color: '#EFECE2', fontWeight: 600 }}>Cephalopod</Title>
+          <Avatar
+            size={200}
+            src="/images/cephy.png"
+            style={{ flexShrink: 0, border: '4px solid #fff', boxSizing: 'content-box' }}
+          />
+          <Title level={2} style={{ margin: 0, color: '#EFECE2', fontWeight: 600 }}>
+            Cephalopod
+          </Title>
           <div
             style={{
               padding: 32,

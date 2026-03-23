@@ -11,7 +11,7 @@ export function SeamailView() {
     <Layout style={{ flex: 1, minHeight: 0, background: '#1B1D23' }}>
       <Layout.Sider width={360} style={{ background: '#2A2D34', borderRight: '1px solid #3d4149' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #3d4149', fontWeight: 600, fontSize: 14, color: '#EFECE2', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <IconMessages size={18} stroke={1.5} style={{ color: '#ADFD43' }} />
+          <IconMessages size={18} stroke={1.5} style={{ color: '#6F458F' }} />
           Messages
         </div>
         <SeamailList selectedFezId={selectedFezId} onSelectFez={setSelectedFezId} />

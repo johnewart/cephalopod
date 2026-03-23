@@ -14,7 +14,7 @@ const queryClient = new QueryClient();
 /** tRPC HTTP server port (must match main process) */
 const TRPC_PORT = 3847;
 
-/** Palette sampled from cephalopod/desktop-app.png */
+/** Dark shell palette; accent #6F458F */
 const antTheme = {
   algorithm: theme.darkAlgorithm,
   token: {
@@ -24,18 +24,18 @@ const antTheme = {
     colorBgLayout: '#16171C',
     colorBgContainer: '#2A2D34',
     colorBgElevated: '#292B32',
-    colorBgSpotlight: 'rgba(173, 253, 67, 0.14)',
+    colorBgSpotlight: 'rgba(111, 69, 143, 0.2)',
     colorBorder: '#3d4149',
     colorBorderSecondary: '#2d3038',
     colorText: '#EFECE2',
     colorTextSecondary: '#9A9D9A',
     colorTextTertiary: '#7A7490',
-    colorPrimary: '#ADFD43',
-    colorPrimaryHover: '#c5fe6a',
-    colorPrimaryActive: '#95e030',
-    colorTextLightSolid: '#16171C',
-    colorSuccess: '#ADFD43',
-    colorSuccessBg: 'rgba(173, 253, 67, 0.12)',
+    colorPrimary: '#6F458F',
+    colorPrimaryHover: '#8E5CB5',
+    colorPrimaryActive: '#583570',
+    colorTextLightSolid: '#EFECE2',
+    colorSuccess: '#6F458F',
+    colorSuccessBg: 'rgba(111, 69, 143, 0.18)',
     colorError: '#D1544E',
     colorErrorBg: 'rgba(209, 84, 78, 0.15)',
     borderRadius: 8,
@@ -45,13 +45,13 @@ const antTheme = {
   components: {
     Menu: {
       itemBg: 'transparent',
-      itemSelectedBg: 'rgba(173, 253, 67, 0.14)',
+      itemSelectedBg: 'rgba(111, 69, 143, 0.22)',
       itemHoverBg: 'rgba(255, 255, 255, 0.06)',
-      itemSelectedColor: '#ADFD43',
+      itemSelectedColor: '#B89BC9',
       itemColor: '#9A9D9A',
     },
     Input: {
-      activeBorderColor: '#ADFD43',
+      activeBorderColor: '#8E5CB5',
       hoverBorderColor: '#7A7490',
       colorBgContainer: '#1B1D23',
     },

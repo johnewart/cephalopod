@@ -1,4 +1,5 @@
-import { app, BrowserWindow } from 'electron';
+import { existsSync } from 'fs';
+import { app, BrowserWindow, nativeImage } from 'electron';
 import { join } from 'path';
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
 import cors from 'cors';
@@ -13,6 +14,22 @@ console.log('[Cephalopod] main process starting');
 
 // Fix for Electron 28+ rendering issues (blank white page)
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+
+/** `static/` is copied to `out/renderer/` on build; in dev, read from project `static/`. */
+function resolveAppIconPath(): string | undefined {
+  const fromBuild = join(__dirname, '../renderer/icon.png');
+  if (existsSync(fromBuild)) return fromBuild;
+  const fromStatic = join(process.cwd(), 'static', 'icon.png');
+  if (existsSync(fromStatic)) return fromStatic;
+  return undefined;
+}
+
+const appIconPath = resolveAppIconPath();
+const appIconImage = (() => {
+  if (!appIconPath) return undefined;
+  const img = nativeImage.createFromPath(appIconPath);
+  return img.isEmpty() ? undefined : img;
+})();
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -40,6 +57,7 @@ function createWindow() {
     width: 1200,
     height: 800,
     show: false,
+    ...(appIconImage ? { icon: appIconImage } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -62,7 +80,10 @@ function createWindow() {
   app.on('quit', () => bridge.subscribe([mainWindow]).unsubscribe());
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  if (process.platform === 'darwin' && appIconImage) app.dock.setIcon(appIconImage);
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

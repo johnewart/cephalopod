@@ -35,8 +35,8 @@ html, body, #root {
 }
 
 .ant-menu-item-selected {
-  background: rgba(173, 253, 67, 0.14) !important;
-  color: #ADFD43 !important;
+  background: rgba(111, 69, 143, 0.22) !important;
+  color: #B89BC9 !important;
 }
 
 .ant-menu-item:hover {
@@ -45,15 +45,15 @@ html, body, #root {
 }
 
 .ant-btn-primary {
-  background: #ADFD43 !important;
-  border-color: #ADFD43 !important;
-  color: #16171C !important;
+  background: #6f458f !important;
+  border-color: #6f458f !important;
+  color: #efece2 !important;
 }
 
 .ant-btn-primary:hover {
-  background: #c5fe6a !important;
-  border-color: #c5fe6a !important;
-  color: #16171C !important;
+  background: #8e5cb5 !important;
+  border-color: #8e5cb5 !important;
+  color: #efece2 !important;
 }
 
 .ant-input,
@@ -73,108 +73,107 @@ html, body, #root {
   color: #9A9D9A !important;
 }
 
-/* Event calendar — classic month grid (Ant Design Calendar fullscreen) */
-.schedule-calendar-wrap {
+/* Event calendar — week strip + day list */
+.events-calendar-week-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.events-week-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  flex-shrink: 0;
+}
+
+.events-week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 12px;
   border: 1px solid #3d4149;
   border-radius: 12px;
-  overflow: hidden;
   background: #24272e;
   box-shadow: 0 6px 28px rgba(0, 0, 0, 0.4);
 }
 
-.schedule-calendar-wrap .ant-picker-calendar {
-  background: transparent;
-}
-
-.schedule-calendar-wrap .ant-picker-calendar-header {
-  padding: 14px 16px;
-  border-bottom: 1px solid #3d4149;
-  background: #2a2d34;
-  justify-content: space-between;
-}
-
-.schedule-calendar-wrap .ant-picker-calendar .ant-select-selector,
-.schedule-calendar-wrap .ant-picker-calendar .ant-radio-button-wrapper {
-  background: #1b1d23 !important;
-  border-color: #3d4149 !important;
-  color: #efece2 !important;
-}
-
-.schedule-calendar-wrap .ant-picker-calendar .ant-radio-button-wrapper-checked {
-  background: rgba(173, 253, 67, 0.18) !important;
-  border-color: #adfd43 !important;
-  color: #adfd43 !important;
-}
-
-.schedule-calendar-wrap .ant-picker-panel {
-  background: #24272e !important;
-  border: 0 !important;
-}
-
-.schedule-calendar-wrap .ant-picker-panel .ant-picker-body {
-  padding: 0 !important;
-}
-
-.schedule-calendar-wrap .ant-picker-content {
-  border-collapse: separate;
-  border-spacing: 0;
-}
-
-.schedule-calendar-wrap .ant-picker-content thead > tr > th {
+.events-week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-height: 88px;
   padding: 10px 8px;
-  font-weight: 600;
+  margin: 0;
+  border: 1px solid #353942;
+  border-radius: 10px;
+  background: #1f2228;
+  color: #efece2;
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.events-week-day:hover {
+  border-color: #4a5058;
+  background: #252830;
+}
+
+.events-week-day-dow {
   font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: #9a9d9a;
-  border-bottom: 1px solid #3d4149;
-  border-right: 1px solid #353942;
-  background: #2a2d34;
 }
 
-.schedule-calendar-wrap .ant-picker-content thead > tr > th:last-child {
-  border-right: none;
+.events-week-day-num {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #efece2;
 }
 
-.schedule-calendar-wrap .ant-picker-content tbody > tr > td {
-  border-right: 1px solid #353942;
-  border-bottom: 1px solid #353942;
-  vertical-align: top;
-  background: #1f2228;
+.events-week-day-count {
+  margin-top: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: #b89bc9;
+  line-height: 1.2;
 }
 
-.schedule-calendar-wrap .ant-picker-content tbody > tr > td:last-child {
-  border-right: none;
+.events-week-day-count-empty {
+  visibility: hidden;
 }
 
-.schedule-calendar-wrap .ant-picker-cell {
-  padding: 0 !important;
+.events-week-day-today:not(.events-week-day-selected) {
+  border-color: rgba(111, 69, 143, 0.55);
 }
 
-.schedule-calendar-wrap .ant-picker-cell .ant-picker-cell-inner {
-  min-height: 88px;
-  width: 100% !important;
-  margin: 0 !important;
-  border-radius: 0 !important;
-  padding: 8px 10px !important;
-  display: flex !important;
+.events-week-day-selected {
+  background: rgba(111, 69, 143, 0.25);
+  border-color: #8e5cb5;
+}
+
+.events-week-day-selected .events-week-day-dow {
+  color: #b89bc9;
+}
+
+.events-calendar-week-list {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
   flex-direction: column;
-  align-items: flex-start !important;
-  justify-content: flex-start !important;
-  color: #efece2 !important;
-  background: transparent !important;
-}
-
-/* Ant Design Calendar always renders a padded day in .ant-picker-calendar-date-value and puts
-   cellRender output in .ant-picker-calendar-date-content — hide the built-in value so only one day shows */
-.schedule-calendar-wrap .ant-picker-calendar-date-value {
-  display: none !important;
-}
-
-/* Day number from cellRender (single source in -date-content) */
-.schedule-calendar-wrap .schedule-calendar-daynum {
-  color: inherit;
-  font-size: 14px;
 }
 
 /* Calendar + Gantt tabs fill available height */
@@ -219,35 +218,26 @@ html, body, #root {
   overflow: hidden;
 }
 
-/* Month view: grid keeps row height bounded so the event list can scroll (flex-wrap was growing with list content) */
-.schedule-calendar-split {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(280px, 3fr);
-  grid-template-rows: minmax(0, 1fr);
-  align-items: stretch;
-  gap: 20px;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
+@media (max-width: 720px) {
+  .events-week-strip {
+    grid-template-columns: repeat(7, minmax(52px, 1fr));
+    gap: 4px;
+    padding: 8px;
+  }
 
-.schedule-calendar-split > .schedule-calendar-wrap {
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
-}
+  .events-week-day {
+    min-height: 76px;
+    padding: 8px 4px;
+  }
 
-.schedule-calendar-split > .schedule-calendar-day-list {
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
+  .events-week-day-num {
+    font-size: 15px;
+  }
 
-@media (max-width: 960px) {
-  .schedule-calendar-split {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-    overflow: auto;
+  .events-week-toolbar .ant-typography {
+    order: 3;
+    width: 100%;
+    text-align: center !important;
   }
 }
 
@@ -310,9 +300,9 @@ html, body, #root {
   padding: 4px 8px;
   font-size: 11px;
   font-weight: 600;
-  color: #1b1d23;
-  background: linear-gradient(180deg, #c8f76a 0%, #adfd43 100%);
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  color: #efece2;
+  background: linear-gradient(180deg, #966bb8 0%, #6f458f 100%);
+  border: 1px solid rgba(0, 0, 0, 0.2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -321,40 +311,17 @@ html, body, #root {
 }
 
 .events-gantt-bar:focus-visible {
-  outline: 2px solid #adfd43;
+  outline: 2px solid #b89bc9;
   outline-offset: 2px;
 }
 
 .events-gantt-bar-scheduled {
-  box-shadow: 0 0 0 2px rgba(173, 253, 67, 0.55);
+  box-shadow: 0 0 0 2px rgba(111, 69, 143, 0.65);
 }
 
 .events-gantt-bar-muted {
   background: linear-gradient(180deg, #5a5d66 0%, #3d4149 100%);
   color: #efece2;
-}
-
-.schedule-calendar-wrap .ant-picker-cell:hover .ant-picker-cell-inner {
-  background: rgba(255, 255, 255, 0.04) !important;
-}
-
-.schedule-calendar-wrap .ant-picker-cell-in-view.ant-picker-cell-today .ant-picker-cell-inner::before {
-  border-color: #adfd43 !important;
-}
-
-.schedule-calendar-wrap .ant-picker-cell-selected:not(.ant-picker-cell-disabled) .ant-picker-cell-inner,
-.schedule-calendar-wrap .ant-picker-cell-in-view.ant-picker-cell-selected .ant-picker-cell-inner {
-  background: rgba(173, 253, 67, 0.2) !important;
-  color: #efece2 !important;
-}
-
-.schedule-calendar-wrap .ant-picker-cell-disabled .ant-picker-cell-inner {
-  color: #5c5f66 !important;
-  background: #1a1c21 !important;
-}
-
-.schedule-calendar-wrap .ant-picker-cell-in-view .ant-picker-cell-inner {
-  font-weight: 600;
 }
 
 .schedule-calendar-day-list {

@@ -1,10 +1,15 @@
 import { useMemo, useState } from 'react';
-import { Alert, Avatar, Breadcrumb, Button, Empty, List, Spin, Typography } from 'antd';
+import { Alert, Avatar, Breadcrumb, Button, Empty, Image, List, Spin, Typography } from 'antd';
 import { IconLayoutList } from '@tabler/icons-react';
 import Markdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import { trpc } from '../lib/trpc';
-import { swiftarrImageThumbUrl } from '../lib/swiftarrImage';
+import {
+  resolveMarkdownImageSrc,
+  swiftarrImageThumbUrl,
+  swiftarrImageUrl,
+  swapSwiftarrThumbToFull,
+} from '../lib/swiftarrImage';
 import { useStore } from '../hooks/useStore';
 
 function isRecord(x: unknown): x is Record<string, unknown> {
@@ -112,6 +117,13 @@ function pickCreatedAt(obj: Record<string, unknown>): string | undefined {
   return pickStringField(obj, ['createdAt', 'created_at', 'timestamp', 'postedAt', 'date']);
 }
 
+/** Forum post attachment filenames (Swiftarr `images` array). */
+function pickPostImages(obj: Record<string, unknown>): string[] {
+  const raw = obj.images ?? obj.imageList ?? obj.image_list;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+}
+
 function formatThreadTime(iso?: string): string | undefined {
   if (!iso) return undefined;
   const d = Date.parse(iso);
@@ -119,95 +131,121 @@ function formatThreadTime(iso?: string): string | undefined {
   return new Date(d).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-const forumPostMarkdownComponents: Components = {
-  p: ({ children }) => <p style={{ margin: '0 0 0.65em', color: 'inherit' }}>{children}</p>,
-  ul: ({ children }) => <ul style={{ margin: '0.35em 0', paddingLeft: '1.25em' }}>{children}</ul>,
-  ol: ({ children }) => <ol style={{ margin: '0.35em 0', paddingLeft: '1.25em' }}>{children}</ol>,
-  li: ({ children }) => <li style={{ margin: '0.15em 0' }}>{children}</li>,
-  a: ({ children, href }) => (
-    <a href={href} style={{ color: '#ADFD43' }} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  ),
-  strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
-  em: ({ children }) => <em style={{ fontStyle: 'italic' }}>{children}</em>,
-  blockquote: ({ children }) => (
-    <blockquote
-      style={{
-        borderLeft: '3px solid #353942',
-        margin: '0.5em 0',
-        paddingLeft: 10,
-        color: '#9A9D9A',
-      }}
-    >
-      {children}
-    </blockquote>
-  ),
-  h1: ({ children }) => (
-    <h1 style={{ fontSize: 18, fontWeight: 600, margin: '0.5em 0 0.35em', color: '#EFECE2' }}>{children}</h1>
-  ),
-  h2: ({ children }) => (
-    <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0.5em 0 0.35em', color: '#EFECE2' }}>{children}</h2>
-  ),
-  h3: ({ children }) => (
-    <h3 style={{ fontSize: 15, fontWeight: 600, margin: '0.5em 0 0.35em', color: '#EFECE2' }}>{children}</h3>
-  ),
-  hr: () => <hr style={{ border: 'none', borderTop: '1px solid #353942', margin: '0.75em 0' }} />,
-  pre: ({ children }) => (
-    <pre
-      style={{
-        background: '#121418',
-        padding: 12,
-        borderRadius: 8,
-        overflow: 'auto',
-        margin: '0.5em 0',
-        fontSize: 12,
-        border: '1px solid #353942',
-      }}
-    >
-      {children}
-    </pre>
-  ),
-  code: ({ children, className }) => {
-    const text = String(children);
-    const multiline = text.includes('\n') && text.trim().length > 0;
-    const fenced =
-      (typeof className === 'string' && /^language-/.test(className)) ||
-      (typeof className === 'string' && className.length > 0) ||
-      multiline;
-    if (fenced) {
+function createForumPostMarkdownComponents(baseUrl: string): Components {
+  return {
+    p: ({ children }) => <p style={{ margin: '0 0 0.65em', color: 'inherit' }}>{children}</p>,
+    ul: ({ children }) => <ul style={{ margin: '0.35em 0', paddingLeft: '1.25em' }}>{children}</ul>,
+    ol: ({ children }) => <ol style={{ margin: '0.35em 0', paddingLeft: '1.25em' }}>{children}</ol>,
+    li: ({ children }) => <li style={{ margin: '0.15em 0' }}>{children}</li>,
+    a: ({ children, href }) => (
+      <a href={href} style={{ color: '#6F458F' }} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    ),
+    strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+    em: ({ children }) => <em style={{ fontStyle: 'italic' }}>{children}</em>,
+    blockquote: ({ children }) => (
+      <blockquote
+        style={{
+          borderLeft: '3px solid #353942',
+          margin: '0.5em 0',
+          paddingLeft: 10,
+          color: '#9A9D9A',
+        }}
+      >
+        {children}
+      </blockquote>
+    ),
+    h1: ({ children }) => (
+      <h1 style={{ fontSize: 18, fontWeight: 600, margin: '0.5em 0 0.35em', color: '#EFECE2' }}>{children}</h1>
+    ),
+    h2: ({ children }) => (
+      <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0.5em 0 0.35em', color: '#EFECE2' }}>{children}</h2>
+    ),
+    h3: ({ children }) => (
+      <h3 style={{ fontSize: 15, fontWeight: 600, margin: '0.5em 0 0.35em', color: '#EFECE2' }}>{children}</h3>
+    ),
+    hr: () => <hr style={{ border: 'none', borderTop: '1px solid #353942', margin: '0.75em 0' }} />,
+    pre: ({ children }) => (
+      <pre
+        style={{
+          background: '#121418',
+          padding: 12,
+          borderRadius: 8,
+          overflow: 'auto',
+          margin: '0.5em 0',
+          fontSize: 12,
+          border: '1px solid #353942',
+        }}
+      >
+        {children}
+      </pre>
+    ),
+    code: ({ children, className }) => {
+      const text = String(children);
+      const multiline = text.includes('\n') && text.trim().length > 0;
+      const fenced =
+        (typeof className === 'string' && /^language-/.test(className)) ||
+        (typeof className === 'string' && className.length > 0) ||
+        multiline;
+      if (fenced) {
+        return (
+          <code
+            className={className}
+            style={{
+              display: 'block',
+              background: 'transparent',
+              whiteSpace: 'pre',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              fontSize: 12,
+            }}
+          >
+            {children}
+          </code>
+        );
+      }
       return (
         <code
-          className={className}
           style={{
-            display: 'block',
-            background: 'transparent',
-            whiteSpace: 'pre',
+            background: '#2a2d33',
+            padding: '2px 5px',
+            borderRadius: 4,
+            fontSize: '0.92em',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-            fontSize: 12,
           }}
         >
           {children}
         </code>
       );
-    }
-    return (
-      <code
-        style={{
-          background: '#2a2d33',
-          padding: '2px 5px',
-          borderRadius: 4,
-          fontSize: '0.92em',
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-        }}
-      >
-        {children}
-      </code>
-    );
-  },
-};
+    },
+    img: ({ src, alt }) => {
+      if (typeof src !== 'string' || !src.trim()) return null;
+      const resolved = resolveMarkdownImageSrc(baseUrl, src);
+      const previewSrc = swapSwiftarrThumbToFull(resolved);
+      const preview = previewSrc !== resolved ? { src: previewSrc } : true;
+      return (
+        <span style={{ display: 'block', margin: '0.5em 0', maxWidth: '100%' }}>
+          <Image
+            src={resolved}
+            alt={typeof alt === 'string' ? alt : ''}
+            loading="lazy"
+            style={{
+              maxWidth: '100%',
+              height: 'auto',
+              display: 'block',
+              borderRadius: 8,
+              border: '1px solid #353942',
+              verticalAlign: 'top',
+            }}
+            preview={preview}
+          />
+        </span>
+      );
+    },
+  };
+}
 
-function ForumPostMarkdown({ source }: { source: string }) {
+function ForumPostMarkdown({ source, baseUrl }: { source: string; baseUrl: string }) {
   if (source === '(No text)') {
     return (
       <Typography.Paragraph
@@ -222,9 +260,49 @@ function ForumPostMarkdown({ source }: { source: string }) {
       </Typography.Paragraph>
     );
   }
+  if (!source.trim()) return null;
+  const components = useMemo(() => createForumPostMarkdownComponents(baseUrl), [baseUrl]);
   return (
     <div style={{ color: '#C8C9CC', fontSize: 14, lineHeight: 1.45 }}>
-      <Markdown components={forumPostMarkdownComponents}>{source}</Markdown>
+      <Markdown components={components}>{source}</Markdown>
+    </div>
+  );
+}
+
+function ForumPostAttachedImages({ baseUrl, filenames }: { baseUrl: string; filenames: string[] }) {
+  if (!baseUrl.trim() || filenames.length === 0) return null;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginTop: 8,
+      }}
+    >
+      {filenames.map((name) => {
+        const thumb = swiftarrImageUrl(baseUrl, name, 'thumb');
+        const full = swiftarrImageUrl(baseUrl, name, 'full');
+        return (
+          <Image
+            key={name}
+            src={thumb}
+            alt=""
+            loading="lazy"
+            style={{
+              maxWidth: 200,
+              maxHeight: 200,
+              width: 'auto',
+              height: 'auto',
+              objectFit: 'cover',
+              borderRadius: 8,
+              border: '1px solid #353942',
+              display: 'block',
+            }}
+            preview={{ src: full }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -236,6 +314,8 @@ type ThreadTimelineItem = {
   createdAt?: string;
   isOriginalPost: boolean;
   userImage?: string;
+  /** Attachment filenames from API `images` */
+  images: string[];
 };
 
 function timelineSortMs(iso?: string): number {
@@ -254,14 +334,17 @@ function rowToThreadItem(
   const text = raw != null ? stripMarkdownWrapper(raw) : undefined;
   const key = pickScalarId(row, ['postID', 'postId', 'post_id', 'id']) ?? fallbackKey;
   const body = text?.trim() ? text : '';
-  if (!isOriginalPost && !body) return null;
+  const images = pickPostImages(row);
+  if (!isOriginalPost && !body && images.length === 0) return null;
+  const textField = body || (images.length ? '' : '(No text)');
   return {
     key,
     author: pickAuthor(row),
-    text: body || '(No text)',
+    text: textField,
     createdAt: pickCreatedAt(row),
     isOriginalPost,
     userImage: pickAuthorUserImage(row),
+    images,
   };
 }
 
@@ -356,7 +439,7 @@ export function ForumsView() {
           gap: 8,
         }}
       >
-        <IconLayoutList size={18} stroke={1.5} style={{ color: '#ADFD43' }} />
+        <IconLayoutList size={18} stroke={1.5} style={{ color: '#6F458F' }} />
         Forums
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -366,7 +449,7 @@ export function ForumsView() {
             {
               title: (
                 <span
-                  style={{ cursor: 'pointer', color: categoryId ? '#ADFD43' : '#9A9D9A' }}
+                  style={{ cursor: 'pointer', color: categoryId ? '#6F458F' : '#9A9D9A' }}
                   onClick={() => {
                     setCategoryId(null);
                     setForumId(null);
@@ -381,7 +464,7 @@ export function ForumsView() {
                   {
                     title: (
                       <span
-                        style={{ cursor: 'pointer', color: forumId ? '#ADFD43' : '#EFECE2' }}
+                        style={{ cursor: 'pointer', color: forumId ? '#6F458F' : '#EFECE2' }}
                         onClick={() => {
                           setForumId(null);
                         }}
@@ -492,8 +575,8 @@ export function ForumsView() {
                             padding: '10px 14px',
                             borderColor: '#353942',
                             color: '#EFECE2',
-                            background: selected ? 'rgba(173, 253, 67, 0.08)' : undefined,
-                            borderLeft: selected ? '3px solid #ADFD43' : undefined,
+                            background: selected ? 'rgba(111, 69, 143, 0.08)' : undefined,
+                            borderLeft: selected ? '3px solid #6F458F' : undefined,
                           }}
                           onClick={() => setForumId(f.id)}
                         >
@@ -575,7 +658,7 @@ export function ForumsView() {
                           ) : (
                             <Avatar
                               size={40}
-                              style={{ flexShrink: 0, background: '#3d4149', color: '#ADFD43' }}
+                              style={{ flexShrink: 0, background: '#3d4149', color: '#6F458F' }}
                             >
                               {(m.author ?? '?').slice(0, 1).toUpperCase()}
                             </Avatar>
@@ -586,8 +669,8 @@ export function ForumsView() {
                               minWidth: 0,
                               borderRadius: 12,
                               border: '1px solid #353942',
-                              borderLeft: m.isOriginalPost ? '3px solid #ADFD43' : undefined,
-                              background: m.isOriginalPost ? 'rgba(173, 253, 67, 0.07)' : '#1b1e24',
+                              borderLeft: m.isOriginalPost ? '3px solid #6F458F' : undefined,
+                              background: m.isOriginalPost ? 'rgba(111, 69, 143, 0.07)' : '#1b1e24',
                               padding: '10px 14px',
                             }}
                           >
@@ -609,7 +692,7 @@ export function ForumsView() {
                                     fontSize: 10,
                                     textTransform: 'uppercase',
                                     letterSpacing: 0.5,
-                                    color: '#ADFD43',
+                                    color: '#6F458F',
                                   }}
                                 >
                                   OP
@@ -617,7 +700,10 @@ export function ForumsView() {
                               ) : null}
                               {when ? <span style={{ fontSize: 11, color: '#7A7490' }}>{when}</span> : null}
                             </div>
-                            <ForumPostMarkdown source={m.text} />
+                            <Image.PreviewGroup>
+                              <ForumPostMarkdown source={m.text} baseUrl={baseUrl} />
+                              <ForumPostAttachedImages baseUrl={baseUrl} filenames={m.images} />
+                            </Image.PreviewGroup>
                           </div>
                         </div>
                       );

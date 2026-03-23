@@ -236,8 +236,8 @@ function LfgBrowseList({
         const fezId = canonicalFezId(fez);
         const rowKey = fezId ?? `open-${i}`;
         const isSelected = fezId != null && selectedFezId === fezId;
-        const titleColor = isSelected ? '#ADFD43' : '#EFECE2';
-        const iconColor = isSelected ? '#ADFD43' : '#7A7490';
+        const titleColor = isSelected ? '#6F458F' : '#EFECE2';
+        const iconColor = isSelected ? '#6F458F' : '#7A7490';
         const whenRaw =
           pickStringField(fez as Record<string, unknown>, ['startTime', 'scheduledTime', 'eventTime']) ?? '';
         const whenPretty = whenRaw ? formatMetaWhen(whenRaw) ?? whenRaw : '';
@@ -253,8 +253,8 @@ function LfgBrowseList({
               padding: '10px 12px',
               margin: '0 4px 4px',
               borderRadius: 8,
-              background: isSelected ? 'rgba(173, 253, 67, 0.14)' : 'transparent',
-              border: isSelected ? '1px solid rgba(173, 253, 67, 0.35)' : '1px solid transparent',
+              background: isSelected ? 'rgba(111, 69, 143, 0.14)' : 'transparent',
+              border: isSelected ? '1px solid rgba(111, 69, 143, 0.35)' : '1px solid transparent',
               color: titleColor,
             }}
             onClick={() => {
@@ -279,7 +279,7 @@ function LfgBrowseList({
                 <div
                   style={{
                     fontSize: 12,
-                    color: isSelected ? '#9aaf88' : '#9A9D9A',
+                    color: isSelected ? '#B89BC9' : '#9A9D9A',
                     marginTop: 4,
                     fontWeight: 500,
                     overflow: 'hidden',
@@ -345,10 +345,10 @@ function LfgJoinedList({
               padding: '6px 8px',
               margin: '0 4px 2px',
               borderRadius: 6,
-              background: isSelected ? 'rgba(173, 253, 67, 0.08)' : 'transparent',
-              border: isSelected ? '1px solid rgba(173, 253, 67, 0.2)' : '1px solid transparent',
+              background: isSelected ? 'rgba(111, 69, 143, 0.08)' : 'transparent',
+              border: isSelected ? '1px solid rgba(111, 69, 143, 0.2)' : '1px solid transparent',
               fontSize: 12,
-              color: isSelected ? '#c8d4c4' : '#7A7490',
+              color: isSelected ? '#C9A8D9' : '#7A7490',
             }}
             onClick={() => {
               if (fezId) onSelectFez(fezId);
@@ -775,7 +775,7 @@ export function LfgView() {
             flexShrink: 0,
           }}
         >
-          <IconUsersGroup size={18} stroke={1.5} style={{ color: '#ADFD43' }} />
+          <IconUsersGroup size={18} stroke={1.5} style={{ color: '#6F458F' }} />
           Open LFG
         </div>
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import dayjs, { type Dayjs } from 'dayjs';
-import { Alert, Button, Calendar, DatePicker, Empty, Input, List, message, Popover, Spin, Tabs, Typography } from 'antd';
+import { Alert, Button, DatePicker, Empty, Input, List, message, Popover, Spin, Switch, Tabs, Typography } from 'antd';
 import { IconCalendar } from '@tabler/icons-react';
 import { trpc } from '../lib/trpc';
 import { eventConflictsWithMySchedule, useMySchedule } from '../hooks/useMySchedule';
@@ -338,6 +338,7 @@ export function EventsCalendarView() {
   });
   const [selected, setSelected] = useState<Dayjs>(() => dayjs());
   const [search, setSearch] = useState('');
+  const [futureOnly, setFutureOnly] = useState(true);
 
   const events = useMemo(() => {
     const raw = extractEventList(query.data);
@@ -347,13 +348,13 @@ export function EventsCalendarView() {
   const searchLower = search.trim().toLowerCase();
   const eventsFiltered = useMemo(() => {
     const now = dayjs();
-    const futureOnly = events.filter((ev) => effectiveEventEnd(ev).isAfter(now));
-    if (!searchLower) return futureOnly;
-    return futureOnly.filter((ev) => {
+    let list = futureOnly ? events.filter((ev) => effectiveEventEnd(ev).isAfter(now)) : events;
+    if (!searchLower) return list;
+    return list.filter((ev) => {
       const hay = `${ev.title} ${ev.location} ${ev.description}`.toLowerCase();
       return hay.includes(searchLower);
     });
-  }, [events, searchLower]);
+  }, [events, searchLower, futureOnly]);
 
   const byDay = useMemo(() => {
     const m = new Map<string, number>();
@@ -363,6 +364,15 @@ export function EventsCalendarView() {
     }
     return m;
   }, [eventsFiltered]);
+
+  const { weekStart, weekEnd, weekDays } = useMemo(() => {
+    const ws = selected.startOf('week');
+    return {
+      weekStart: ws,
+      weekEnd: ws.endOf('week'),
+      weekDays: Array.from({ length: 7 }, (_, i) => ws.add(i, 'day')),
+    };
+  }, [selected]);
 
   const eventsForSelectedDay = useMemo(() => {
     const dayKey = selected.format('YYYY-MM-DD');
@@ -422,7 +432,7 @@ export function EventsCalendarView() {
           gap: 8,
         }}
       >
-        <IconCalendar size={18} stroke={1.5} style={{ color: '#ADFD43' }} />
+        <IconCalendar size={18} stroke={1.5} style={{ color: '#6F458F' }} />
         Event calendar
       </div>
       <div
@@ -436,117 +446,127 @@ export function EventsCalendarView() {
           gap: 12,
         }}
       >
-        <Input.Search
-          allowClear
-          placeholder="Search title, location, description"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ maxWidth: 400, flexShrink: 0 }}
-        />
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: '12px 20px',
+            flexShrink: 0,
+          }}
+        >
+          <Input.Search
+            allowClear
+            placeholder="Search title, location, description"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ maxWidth: 400, flex: '1 1 200px' }}
+          />
+          <label
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 10,
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
+            <Switch checked={futureOnly} onChange={setFutureOnly} />
+            <Typography.Text style={{ color: '#9A9D9A', fontSize: 13 }}>Show only future events</Typography.Text>
+          </label>
+        </div>
         <Tabs
           className="events-calendar-tabs"
-          defaultActiveKey="month"
+          defaultActiveKey="week"
           items={[
             {
-              key: 'month',
-              label: 'Month',
+              key: 'week',
+              label: 'Week',
               children: (
-                <div
-                  style={{
-                    flex: 1,
-                    minHeight: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 16,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div className="schedule-calendar-split">
-                    <div className="schedule-calendar-wrap">
-                      <Calendar
-                        fullscreen
-                        value={selected}
-                        onSelect={(d) => setSelected(d)}
-                        onPanelChange={(d) => setSelected(d)}
-                        cellRender={(date, info) => {
-                          if (info.type !== 'date') return info.originNode;
-                          const n = byDay.get(date.format('YYYY-MM-DD')) ?? 0;
-                          return (
-                            <div
-                              className="schedule-calendar-cell-body"
-                              style={{
-                                width: '100%',
-                                minHeight: 72,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'stretch',
-                                gap: 6,
-                              }}
-                            >
-                              <span className="schedule-calendar-daynum" style={{ fontWeight: 600, lineHeight: 1.2 }}>
-                                {date.date()}
-                              </span>
-                              {n > 0 ? (
-                                <span
-                                  title={`${n} event(s)`}
-                                  style={{
-                                    marginTop: 'auto',
-                                    fontSize: 11,
-                                    fontWeight: 500,
-                                    color: '#ADFD43',
-                                    lineHeight: 1.2,
-                                  }}
-                                >
-                                  {n} event{n === 1 ? '' : 's'}
-                                </span>
-                              ) : null}
-                            </div>
-                          );
-                        }}
-                      />
-                    </div>
-                    <div className="schedule-calendar-day-list" style={{ gap: 12 }}>
-                      <Typography.Text strong style={{ color: '#EFECE2', fontSize: 15, flexShrink: 0 }}>
-                        {selected.format('dddd, MMMM D, YYYY')}
-                      </Typography.Text>
-                      <div
-                        className="schedule-calendar-event-scroll"
-                        style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}
-                      >
-                        <List
-                          className="schedule-calendar-event-list"
-                          size="small"
-                          dataSource={eventsForSelectedDay}
-                          locale={{ emptyText: <Empty description="No events this day" /> }}
-                          renderItem={(ev) => (
-                            <List.Item style={{ borderColor: '#3d4149', paddingLeft: 0, paddingRight: 0 }}>
-                              <List.Item.Meta
-                                title={<span style={{ color: '#EFECE2' }}>{ev.title}</span>}
-                                description={
-                                  <div style={{ color: '#9A9D9A', fontSize: 12 }}>
-                                    <div>
-                                      {ev.start.format('h:mm A')}
-                                      {ev.end?.isValid() ? ` – ${ev.end.format('h:mm A')}` : null}
-                                      {ev.location ? ` · ${ev.location}` : null}
-                                    </div>
-                                    {ev.eventType ? (
-                                      <div style={{ marginTop: 4, color: '#7A7490' }}>{ev.eventType}</div>
-                                    ) : null}
-                                    {ev.description ? (
-                                      <Typography.Paragraph
-                                        ellipsis={{ rows: 3, expandable: true, symbol: 'more' }}
-                                        style={{ marginTop: 8, marginBottom: 0, color: '#7A7490' }}
-                                      >
-                                        {ev.description}
-                                      </Typography.Paragraph>
-                                    ) : null}
-                                  </div>
-                                }
-                              />
-                            </List.Item>
+                <div className="events-calendar-week-layout">
+                  <div className="events-week-toolbar">
+                    <Button type="text" onClick={() => setSelected((d) => d.subtract(1, 'week'))} style={{ color: '#6F458F' }}>
+                      ← Previous week
+                    </Button>
+                    <Typography.Text strong style={{ color: '#EFECE2', fontSize: 14, flex: 1, textAlign: 'center' }}>
+                      {weekStart.format('MMM D')} – {weekEnd.format('MMM D, YYYY')}
+                    </Typography.Text>
+                    <Button type="text" onClick={() => setSelected((d) => d.add(1, 'week'))} style={{ color: '#6F458F' }}>
+                      Next week →
+                    </Button>
+                    <Button size="small" onClick={() => setSelected(dayjs())} style={{ marginLeft: 8 }}>
+                      Today
+                    </Button>
+                  </div>
+                  <div className="events-week-strip" role="row" aria-label="Days this week">
+                    {weekDays.map((day) => {
+                      const key = day.format('YYYY-MM-DD');
+                      const n = byDay.get(key) ?? 0;
+                      const isSelected = selected.isSame(day, 'day');
+                      const isToday = day.isSame(dayjs(), 'day');
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          className={`events-week-day${isSelected ? ' events-week-day-selected' : ''}${
+                            isToday ? ' events-week-day-today' : ''
+                          }`}
+                          onClick={() => setSelected(day)}
+                        >
+                          <span className="events-week-day-dow">{day.format('ddd')}</span>
+                          <span className="events-week-day-num">{day.date()}</span>
+                          {n > 0 ? (
+                            <span className="events-week-day-count" title={`${n} event(s)`}>
+                              {n} event{n === 1 ? '' : 's'}
+                            </span>
+                          ) : (
+                            <span className="events-week-day-count events-week-day-count-empty"> </span>
                           )}
-                        />
-                      </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="schedule-calendar-day-list events-calendar-week-list" style={{ gap: 12 }}>
+                    <Typography.Text strong style={{ color: '#EFECE2', fontSize: 15, flexShrink: 0 }}>
+                      {selected.format('dddd, MMMM D, YYYY')}
+                    </Typography.Text>
+                    <div
+                      className="schedule-calendar-event-scroll"
+                      style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}
+                    >
+                      <List
+                        className="schedule-calendar-event-list"
+                        size="small"
+                        dataSource={eventsForSelectedDay}
+                        locale={{ emptyText: <Empty description="No events this day" /> }}
+                        renderItem={(ev) => (
+                          <List.Item style={{ borderColor: '#3d4149', paddingLeft: 0, paddingRight: 0 }}>
+                            <List.Item.Meta
+                              title={<span style={{ color: '#EFECE2' }}>{ev.title}</span>}
+                              description={
+                                <div style={{ color: '#9A9D9A', fontSize: 12 }}>
+                                  <div>
+                                    {ev.start.format('h:mm A')}
+                                    {ev.end?.isValid() ? ` – ${ev.end.format('h:mm A')}` : null}
+                                    {ev.location ? ` · ${ev.location}` : null}
+                                  </div>
+                                  {ev.eventType ? (
+                                    <div style={{ marginTop: 4, color: '#7A7490' }}>{ev.eventType}</div>
+                                  ) : null}
+                                  {ev.description ? (
+                                    <Typography.Paragraph
+                                      ellipsis={{ rows: 3, expandable: true, symbol: 'more' }}
+                                      style={{ marginTop: 8, marginBottom: 0, color: '#7A7490' }}
+                                    >
+                                      {ev.description}
+                                    </Typography.Paragraph>
+                                  ) : null}
+                                </div>
+                              }
+                            />
+                          </List.Item>
+                        )}
+                      />
                     </div>
                   </div>
                 </div>
@@ -616,7 +636,7 @@ export function EventsCalendarView() {
                           <List.Item
                             style={{ borderColor: '#353942', padding: '6px 0' }}
                             actions={[
-                              <Button key="rm" type="link" size="small" onClick={() => mySchedule.remove(m.id)} style={{ color: '#ADFD43' }}>
+                              <Button key="rm" type="link" size="small" onClick={() => mySchedule.remove(m.id)} style={{ color: '#6F458F' }}>
                                 Remove
                               </Button>,
                             ]}
