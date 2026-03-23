@@ -229,7 +229,7 @@ function LfgBrowseList({
 
   return (
     <List
-      style={{ padding: '8px 8px 16px' }}
+      style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px 8px 16px' }}
       dataSource={rows}
       split={false}
       renderItem={(fez, i) => {
@@ -824,8 +824,9 @@ export function LfgView() {
               style={{
                 flex: 1,
                 minHeight: 0,
-                overflowY: 'auto',
-                overflowX: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
               }}
             >
               <LfgBrowseList

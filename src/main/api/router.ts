@@ -121,6 +121,31 @@ export const appRouter = router({
     return result as unknown;
   }),
 
+  fezOpen: publicProcedure
+    .input(
+      z.object({
+        type: z.array(z.string()).optional(),
+        cruiseday: z.number().optional(),
+        start: z.number().optional(),
+        limit: z.number().optional(),
+        hidePast: z.boolean().optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const result = await FezService.fezOpen(
+        input.type,
+        input.cruiseday,
+        input.start,
+        input.limit,
+        input.hidePast
+      );
+      return result as unknown;
+    }),
+
   fezGet: publicProcedure
     .input(z.object({ fezId: z.string() }))
     .query(async ({ input }) => {
@@ -164,6 +189,30 @@ export const appRouter = router({
         postAsModerator: false,
         postAsTwitarrTeam: false,
       });
+      return result as unknown;
+    }),
+
+  fezJoin: publicProcedure
+    .input(z.object({ fezId: z.string() }))
+    .mutation(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const fezId = normalizeSwiftarrUuid(input.fezId);
+      const result = await FezService.fezJoin(fezId);
+      return result as unknown;
+    }),
+
+  fezUnjoin: publicProcedure
+    .input(z.object({ fezId: z.string() }))
+    .mutation(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const fezId = normalizeSwiftarrUuid(input.fezId);
+      const result = await FezService.fezUnjoin(fezId);
       return result as unknown;
     }),
 

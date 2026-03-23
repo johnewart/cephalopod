@@ -1,7 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { Layout, Menu, Avatar, Button } from 'antd';
 import { SettingOutlined, LogoutOutlined } from '@ant-design/icons';
-import { IconCalendar, IconLayoutList, IconMessages, IconPhoto } from '@tabler/icons-react';
+import { IconCalendar, IconLayoutList, IconMessages, IconPhoto, IconUsersGroup } from '@tabler/icons-react';
 import { trpc } from '../lib/trpc';
 import { useStore } from '../hooks/useStore';
 
@@ -10,11 +10,12 @@ interface AppShellProps {
   photostreamPanel: ReactNode;
   calendarPanel: ReactNode;
   forumsPanel: ReactNode;
+  lfgPanel: ReactNode;
 }
 
-type NavItem = 'messages' | 'photostream' | 'calendar' | 'forums' | 'settings';
+type NavItem = 'messages' | 'photostream' | 'calendar' | 'forums' | 'lfg' | 'settings';
 
-export function AppShell({ messagesPanel, photostreamPanel, calendarPanel, forumsPanel }: AppShellProps) {
+export function AppShell({ messagesPanel, photostreamPanel, calendarPanel, forumsPanel, lfgPanel }: AppShellProps) {
   const [activeNav, setActiveNav] = useState<NavItem>('messages');
   const username = useStore((s) => s.auth.username);
   const logoutMutation = trpc.logout.useMutation();
@@ -26,6 +27,7 @@ export function AppShell({ messagesPanel, photostreamPanel, calendarPanel, forum
     { key: 'photostream', icon: <IconPhoto size={18} />, label: 'Photostream' },
     { key: 'calendar', icon: <IconCalendar size={18} />, label: 'Calendar' },
     { key: 'forums', icon: <IconLayoutList size={18} />, label: 'Forums' },
+    { key: 'lfg', icon: <IconUsersGroup size={18} />, label: 'LFG' },
     { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
   ];
 
@@ -102,6 +104,10 @@ export function AppShell({ messagesPanel, photostreamPanel, calendarPanel, forum
         ) : activeNav === 'forums' ? (
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {forumsPanel}
+          </div>
+        ) : activeNav === 'lfg' ? (
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {lfgPanel}
           </div>
         ) : (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A7490', fontSize: 14 }}>

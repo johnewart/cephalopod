@@ -6,6 +6,7 @@ import { SeamailView } from './components/SeamailView';
 import { PhotostreamView } from './components/PhotostreamView';
 import { EventsCalendarView } from './components/EventsCalendarView';
 import { ForumsView } from './components/ForumsView';
+import { LfgView } from './components/LfgView';
 
 const { Title } = Typography;
 
@@ -37,6 +38,7 @@ export default function App() {
           photostreamPanel={<PhotostreamView />}
           calendarPanel={<EventsCalendarView />}
           forumsPanel={<ForumsView />}
+          lfgPanel={<LfgView />}
         />
       )}
     </div>
