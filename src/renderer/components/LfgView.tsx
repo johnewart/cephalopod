@@ -1,6 +1,7 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Layout, List, Spin, Alert, Input, Button, Avatar, Collapse, Select } from 'antd';
+import dayjs, { type Dayjs } from 'dayjs';
+import { List, Spin, Alert, Input, Button, Avatar, Select, Drawer, Masonry, Typography } from 'antd';
 import { SendOutlined } from '@ant-design/icons';
 import {
   IconCoffee,
@@ -89,23 +90,21 @@ function fezStartMs(fez: FezRow): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-/** Client-side guard: only rows with no start time or start in the future (server also sends hidePast). */
-function isFezUpcoming(fez: FezRow, nowMs = Date.now()): boolean {
+/**
+ * Future-only for open listings: must not have started yet (local clock).
+ * Rows with no parseable start are kept (Swiftarr often omits time for flexible LFGs).
+ */
+function isFezFuture(fez: FezRow, nowMs = Date.now()): boolean {
   const t = fezStartMs(fez);
   if (t == null) return true;
   return t >= nowMs - 60_000;
 }
 
-function maxSpotsForFez(fez: FezRow): number | undefined {
-  const r = fez as Record<string, unknown>;
-  const n = r.maxParticipants;
-  if (typeof n === 'number' && Number.isFinite(n) && n > 0) return Math.floor(n);
-  const s = pickStringField(r, ['maxParticipants', 'maxSize', 'capacity', 'memberLimit', 'maxMembers']);
-  if (s) {
-    const p = parseInt(s.replace(/\D/g, ''), 10);
-    if (!Number.isNaN(p) && p > 0) return p;
-  }
-  return undefined;
+/** Local calendar day for a scheduled fez, or null when no start time is known. */
+function fezLocalDayKey(fez: FezRow): string | null {
+  const ms = fezStartMs(fez);
+  if (ms == null) return null;
+  return dayjs(ms).format('YYYY-MM-DD');
 }
 
 /** Text used for quick search (title, type, info fields, first post). */
@@ -146,17 +145,56 @@ function userIsParticipant(
   return fez.members.participants.some((p) => usernamesMatch(p.username, currentUsername));
 }
 
-function participantCount(fez: FezRow | undefined): number {
-  const n = fez?.members?.participants?.length;
-  return typeof n === 'number' ? n : 0;
+function coerceNonNegativeInt(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return Math.floor(v);
+  if (typeof v === 'string' && v.trim()) {
+    const p = parseInt(v.replace(/[^\d-]/g, ''), 10);
+    if (!Number.isNaN(p) && p >= 0) return p;
+  }
+  return null;
 }
 
-function spotsSubtitle(fez: FezRow): string {
-  const n = participantCount(fez);
-  const max = maxSpotsForFez(fez);
-  if (max != null) return `${n} / ${max} spots`;
-  if (n > 0) return `${n} ${n === 1 ? 'person' : 'people'}`;
-  return 'Be the first to join';
+/**
+ * Participant count when the API includes it. Returns null if `members.participants` is absent
+ * and no known count field exists — avoids showing 0 for "unknown" on `/fez/open` summaries.
+ */
+function joinedParticipantCount(fez: FezRow | undefined): number | null {
+  if (!fez) return null;
+  const parts = fez.members?.participants;
+  if (Array.isArray(parts)) return parts.length;
+
+  const r = fez as Record<string, unknown>;
+  const rootKeys = [
+    'participantCount',
+    'participant_count',
+    'memberCount',
+    'member_count',
+    'currentParticipantCount',
+    'current_participant_count',
+    'joinedCount',
+    'joined_count',
+    'attendeeCount',
+    'attendee_count',
+    'numberOfParticipants',
+    'numParticipants',
+  ];
+  for (const k of rootKeys) {
+    const n = coerceNonNegativeInt(r[k]);
+    if (n != null) return n;
+  }
+  const mem = r.members;
+  if (isRecord(mem)) {
+    for (const k of ['participantCount', 'count', 'memberCount', 'member_count', 'size']) {
+      const n = coerceNonNegativeInt(mem[k]);
+      if (n != null) return n;
+    }
+  }
+  return null;
+}
+
+/** For views that always need a number (e.g. thread header after fezGet). */
+function joinedParticipantCountOrZero(fez: FezRow | undefined): number {
+  return joinedParticipantCount(fez) ?? 0;
 }
 
 /** Real fez UUID from API — use for membership and fezGet, not list index. */
@@ -207,167 +245,28 @@ function formatMetaWhen(iso?: string): string | undefined {
   });
 }
 
-function LfgBrowseList({
-  rows,
-  selectedFezId,
-  onSelectFez,
-  emptyLabel,
-}: {
-  rows: FezRow[];
-  selectedFezId: string | null;
-  onSelectFez: (fezId: string) => void;
-  /** Shown when `rows` is empty (e.g. different copy when filters are active). */
-  emptyLabel?: string;
-}) {
-  if (rows.length === 0) {
-    return (
-      <div style={{ padding: 16, color: '#7A7490', fontSize: 13 }}>
-        {emptyLabel ?? 'No open LFG listings right now'}
-      </div>
-    );
-  }
+/** Fixed label column so Kind / When / Where / Size values line up across cards. */
+const LFG_META_LABEL_COL: CSSProperties = {
+  width: 58,
+  flexShrink: 0,
+  textAlign: 'right',
+  color: '#7A7490',
+  fontSize: 12,
+  fontWeight: 500,
+};
 
+function LfgMetaRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <List
-      style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px 8px 16px' }}
-      dataSource={rows}
-      split={false}
-      renderItem={(fez, i) => {
-        const fezId = canonicalFezId(fez);
-        const rowKey = fezId ?? `open-${i}`;
-        const isSelected = fezId != null && selectedFezId === fezId;
-        const titleColor = isSelected ? '#6F458F' : '#EFECE2';
-        const iconColor = isSelected ? '#6F458F' : '#7A7490';
-        const whenRaw =
-          pickStringField(fez as Record<string, unknown>, ['startTime', 'scheduledTime', 'eventTime']) ?? '';
-        const whenPretty = whenRaw ? formatMetaWhen(whenRaw) ?? whenRaw : '';
-        const typeLabel = fez.fezType?.trim() || '';
-        const metaLine = [typeLabel, whenPretty].filter(Boolean).join(' · ');
-
-        return (
-          <List.Item
-            key={rowKey}
-            style={{
-              cursor: fezId ? 'pointer' : 'default',
-              opacity: fezId ? 1 : 0.6,
-              padding: '10px 12px',
-              margin: '0 4px 4px',
-              borderRadius: 8,
-              background: isSelected ? 'rgba(111, 69, 143, 0.14)' : 'transparent',
-              border: isSelected ? '1px solid rgba(111, 69, 143, 0.35)' : '1px solid transparent',
-              color: titleColor,
-            }}
-            onClick={() => {
-              if (fezId) onSelectFez(fezId);
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%', minWidth: 0 }}>
-              <LfgTypeIcon fezType={fez.fezType} color={iconColor} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    color: titleColor,
-                  }}
-                >
-                  {fez.title ?? fezId ?? 'LFG'}
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: isSelected ? '#B89BC9' : '#9A9D9A',
-                    marginTop: 4,
-                    fontWeight: 500,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {spotsSubtitle(fez)}
-                </div>
-                {metaLine ? (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: '#7A7490',
-                      marginTop: 2,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {metaLine}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </List.Item>
-        );
-      }}
-    />
+    <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', minWidth: 0 }}>
+      <span style={LFG_META_LABEL_COL}>{label}</span>
+      <span style={{ flex: 1, minWidth: 0, color: '#9A9D9A', fontSize: 13, lineHeight: 1.4 }}>{children}</span>
+    </div>
   );
 }
 
-/** Compact list for joined LFGs — low visual weight. */
-function LfgJoinedList({
-  rows,
-  selectedFezId,
-  onSelectFez,
-}: {
-  rows: FezRow[];
-  selectedFezId: string | null;
-  onSelectFez: (fezId: string) => void;
-}) {
-  if (rows.length === 0) {
-    return <div style={{ padding: '0 12px 12px', color: '#5c5f66', fontSize: 12 }}>None yet</div>;
-  }
-
-  return (
-    <List
-      style={{ padding: '0 8px 12px', maxHeight: 220, overflow: 'auto' }}
-      dataSource={rows}
-      split={false}
-      size="small"
-      renderItem={(fez, i) => {
-        const fezId = canonicalFezId(fez);
-        const rowKey = fezId ?? `joined-${i}`;
-        const isSelected = fezId != null && selectedFezId === fezId;
-        return (
-          <List.Item
-            key={rowKey}
-            style={{
-              cursor: fezId ? 'pointer' : 'default',
-              opacity: fezId ? 1 : 0.6,
-              padding: '6px 8px',
-              margin: '0 4px 2px',
-              borderRadius: 6,
-              background: isSelected ? 'rgba(111, 69, 143, 0.08)' : 'transparent',
-              border: isSelected ? '1px solid rgba(111, 69, 143, 0.2)' : '1px solid transparent',
-              fontSize: 12,
-              color: isSelected ? '#C9A8D9' : '#7A7490',
-            }}
-            onClick={() => {
-              if (fezId) onSelectFez(fezId);
-            }}
-          >
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {fez.title ?? fezId ?? 'LFG'}
-            </span>
-          </List.Item>
-        );
-      }}
-    />
-  );
-}
-
-/** Details for an LFG you have not joined — no chat UI. */
-function LfgInfoPanel({ fezId }: { fezId: string }) {
+/** Shared detail body (same fields as the former right-hand info panel). */
+function LfgFezDetailBody({ fez, fezId }: { fez: FezRow; fezId: string }) {
   const utils = trpc.useUtils();
-  const { data, isLoading, error } = trpc.fezGet.useQuery({ fezId });
   const joinMutation = trpc.fezJoin.useMutation({
     onSuccess: () => {
       utils.fezGet.invalidate({ fezId });
@@ -376,10 +275,8 @@ function LfgInfoPanel({ fezId }: { fezId: string }) {
     },
   });
 
-  const fez = data as FezRow | undefined;
-  const root = (fez ?? {}) as Record<string, unknown>;
-  const title = fez?.title ?? 'LFG';
-  const typeLabel = fez?.fezType?.trim();
+  const root = fez as Record<string, unknown>;
+  const title = fez.title ?? 'LFG';
   const whenRaw =
     pickStringField(root, ['startTime', 'scheduledTime', 'eventTime', 'start', 'time']) ?? '';
   const when = formatMetaWhen(whenRaw) ?? whenRaw;
@@ -390,7 +287,7 @@ function LfgInfoPanel({ fezId }: { fezId: string }) {
   const blurb =
     pickStringField(root, ['info', 'details', 'detail', 'description', 'body']) ??
     (() => {
-      const posts = fez?.members?.posts;
+      const posts = fez.members?.posts;
       if (!Array.isArray(posts) || posts.length === 0) return undefined;
       const first = posts[0];
       if (!isRecord(first)) return undefined;
@@ -398,54 +295,45 @@ function LfgInfoPanel({ fezId }: { fezId: string }) {
       return t;
     })();
 
-  const participants = fez?.members?.participants ?? [];
+  const joinedCount = joinedParticipantCount(fez);
+  const joinedLine =
+    joinedCount === null
+      ? '—'
+      : joinedCount === 0
+        ? 'No one has joined yet'
+        : joinedCount === 1
+          ? '1 person has joined so far'
+          : `${joinedCount} people have joined so far`;
+
+  const participants = fez.members?.participants ?? [];
   const displayNames = participants.map((p) => {
     const dn = p.displayName?.trim();
     if (dn) return dn;
     return p.username ?? 'Someone';
   });
 
-  if (isLoading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 16 }}>
-        <Spin tip="Loading LFG…" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return <Alert type="error" message={error.message} showIcon style={{ margin: 16 }} />;
-  }
-
   return (
-    <div
-      style={{
-        flex: 1,
-        minHeight: 0,
-        overflow: 'auto',
-        padding: '28px 32px',
-        background: '#1B1D23',
-        color: '#EFECE2',
-      }}
-    >
-      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#EFECE2', lineHeight: 1.25 }}>{title}</h2>
-      <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 14, color: '#9A9D9A' }}>
-        {typeLabel ? <div>Kind: {typeLabel}</div> : null}
-        {when ? <div>When: {when}</div> : null}
-        {location ? <div>Where: {location}</div> : null}
-        {maxStr ? <div>Size: {maxStr}</div> : null}
-        <div>
-          {participantCount(fez)} {participantCount(fez) === 1 ? 'person has' : 'people have'} joined so far
-        </div>
+    <div style={{ color: '#EFECE2' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <LfgTypeIcon fezType={fez.fezType} color="#6F458F" />
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#EFECE2', lineHeight: 1.3, flex: 1, minWidth: 0 }}>
+          {title}
+        </h2>
+      </div>
+      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <LfgMetaRow label="When">{when || '—'}</LfgMetaRow>
+        <LfgMetaRow label="Where">{location ?? '—'}</LfgMetaRow>
+        <LfgMetaRow label="Size">{maxStr ?? '—'}</LfgMetaRow>
+        <LfgMetaRow label="Joined">{joinedLine}</LfgMetaRow>
       </div>
       {blurb ? (
-        <div style={{ marginTop: 22 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#7A7490', marginBottom: 8 }}>About</div>
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#7A7490', marginBottom: 6 }}>About</div>
           <div
             style={{
-              fontSize: 15,
+              fontSize: 14,
               color: '#EFECE2',
-              lineHeight: 1.55,
+              lineHeight: 1.5,
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
             }}
@@ -455,11 +343,11 @@ function LfgInfoPanel({ fezId }: { fezId: string }) {
         </div>
       ) : null}
       {displayNames.length > 0 ? (
-        <div style={{ marginTop: 22 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#7A7490', marginBottom: 8 }}>Who&apos;s going</div>
-          <ul style={{ margin: 0, paddingLeft: 18, color: '#c9c5bc', fontSize: 14 }}>
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#7A7490', marginBottom: 6 }}>Who&apos;s going</div>
+          <ul style={{ margin: 0, paddingLeft: 18, color: '#c9c5bc', fontSize: 13 }}>
             {displayNames.slice(0, 24).map((name, idx) => (
-              <li key={`${name}-${idx}`} style={{ marginBottom: 4 }}>
+              <li key={`${name}-${idx}`} style={{ marginBottom: 3 }}>
                 {name}
               </li>
             ))}
@@ -467,14 +355,50 @@ function LfgInfoPanel({ fezId }: { fezId: string }) {
           </ul>
         </div>
       ) : null}
-      <div style={{ marginTop: 28, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-        <Button type="primary" size="large" loading={joinMutation.isPending} onClick={() => joinMutation.mutate({ fezId })}>
+      <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <Button type="primary" size="middle" loading={joinMutation.isPending} onClick={() => joinMutation.mutate({ fezId })}>
           Join this LFG
         </Button>
-        <span style={{ fontSize: 12, color: '#5c5f66', maxWidth: 320 }}>
-          After you join, open it from &quot;Your LFGs&quot; below to chat.
+        <span style={{ fontSize: 11, color: '#5c5f66', lineHeight: 1.4 }}>
+          After you join, use &quot;Your LFGs&quot; above to open the chat.
         </span>
       </div>
+    </div>
+  );
+}
+
+function LfgOpenFezCard({ fez }: { fez: FezRow }) {
+  const fezId = canonicalFezId(fez);
+  if (!fezId) {
+    return (
+      <div
+        style={{
+          border: '1px solid #3d4149',
+          borderRadius: 12,
+          background: '#24272e',
+          padding: 20,
+          opacity: 0.65,
+        }}
+      >
+        <div style={{ color: '#7A7490', fontSize: 13 }}>This listing has no id and can&apos;t be joined.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        border: '1px solid #3d4149',
+        borderRadius: 12,
+        background: '#24272e',
+        padding: 20,
+        boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+        display: 'flex',
+        flexDirection: 'column',
+        minWidth: 0,
+      }}
+    >
+      <LfgFezDetailBody fez={fez} fezId={fezId} />
     </div>
   );
 }
@@ -520,7 +444,7 @@ function LfgThreadPanel({ fezId }: { fezId: string }) {
   } | undefined;
   const posts = fez?.members?.posts ?? [];
   const isMember = userIsParticipant(fez, currentUsername);
-  const count = participantCount(fez as FezRow);
+  const count = joinedParticipantCountOrZero(fez as FezRow);
 
   useLayoutEffect(() => {
     if (isLoading || error) return;
@@ -683,9 +607,10 @@ function LfgThreadPanel({ fezId }: { fezId: string }) {
 
 export function LfgView() {
   const currentUsername = useStore((s) => s.auth.username);
-  const [selectedFezId, setSelectedFezId] = useState<string | null>(null);
+  const [chatDrawerFezId, setChatDrawerFezId] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
+  const [selectedDay, setSelectedDay] = useState<Dayjs>(() => dayjs());
 
   const openQuery = trpc.fezOpen.useQuery({
     hidePast: true,
@@ -716,186 +641,300 @@ export function LfgView() {
     [openRows, joinedIds],
   );
 
+  const upcomingBrowseRows = useMemo(() => baseBrowseRows.filter((f) => isFezFuture(f)), [baseBrowseRows]);
+
   const typeOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const f of baseBrowseRows) {
+    for (const f of upcomingBrowseRows) {
       const t = f.fezType?.trim();
       if (t) set.add(t);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [baseBrowseRows]);
+  }, [upcomingBrowseRows]);
 
-  const filteredBrowseRows = useMemo(() => {
+  const preDayFiltered = useMemo(() => {
     const q = searchText.trim().toLowerCase();
-    return baseBrowseRows
-      .filter((f) => isFezUpcoming(f))
+    return upcomingBrowseRows
       .filter((f) => !typeFilter || f.fezType?.trim() === typeFilter)
       .filter((f) => !q || fezSearchBlob(f).includes(q));
-  }, [baseBrowseRows, searchText, typeFilter]);
+  }, [upcomingBrowseRows, searchText, typeFilter]);
+
+  const { weekStart, weekEnd, weekDays } = useMemo(() => {
+    const ws = selectedDay.startOf('week');
+    return {
+      weekStart: ws,
+      weekEnd: ws.endOf('week'),
+      weekDays: Array.from({ length: 7 }, (_, i) => ws.add(i, 'day')),
+    };
+  }, [selectedDay]);
+
+  const lfgByDay = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const f of preDayFiltered) {
+      const k = fezLocalDayKey(f);
+      if (k) m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return m;
+  }, [preDayFiltered]);
+
+  const datedForSelectedDay = useMemo(
+    () => preDayFiltered.filter((f) => fezLocalDayKey(f) === selectedDay.format('YYYY-MM-DD')),
+    [preDayFiltered, selectedDay],
+  );
+
+  const undatedListings = useMemo(
+    () => preDayFiltered.filter((f) => fezLocalDayKey(f) == null),
+    [preDayFiltered],
+  );
 
   const filtersActive = Boolean(searchText.trim() || typeFilter);
   const listEmptyLabel = filtersActive
-    ? 'No listings match your filters (future LFGs only)'
-    : 'No open LFG listings right now';
+    ? 'No future listings match your filters for this view'
+    : 'No future open LFG listings right now';
 
-  const isLoadingSidebar = openQuery.isLoading || joinedQuery.isLoading;
-  const sidebarError = openQuery.error ?? joinedQuery.error;
+  const isLoading = openQuery.isLoading || joinedQuery.isLoading;
+  const loadError = openQuery.error ?? joinedQuery.error;
 
-  const selectedIsJoined = selectedFezId != null && joinedIds.has(selectedFezId);
+  const datedMasonryItems = useMemo(
+    () =>
+      datedForSelectedDay.map((fez, i) => ({
+        key: canonicalFezId(fez) ?? `lfg-dated-${i}`,
+        data: fez,
+      })),
+    [datedForSelectedDay],
+  );
+
+  const undatedMasonryItems = useMemo(
+    () =>
+      undatedListings.map((fez, i) => ({
+        key: canonicalFezId(fez) ?? `lfg-undated-${i}`,
+        data: fez,
+      })),
+    [undatedListings],
+  );
+
+  const nothingToShow =
+    !isLoading && !loadError && datedForSelectedDay.length === 0 && undatedListings.length === 0;
 
   return (
-    <Layout style={{ flex: 1, minHeight: 0, background: '#1B1D23' }}>
-      <Layout.Sider
-        width={360}
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#1B1D23', overflow: 'hidden' }}>
+      <div
         style={{
-          background: '#2A2D34',
-          borderRight: '1px solid #3d4149',
+          flexShrink: 0,
+          padding: '16px 20px',
+          borderBottom: '1px solid #3d4149',
+          background: '#1B1D23',
         }}
       >
         <div
           style={{
-            height: '100%',
-            minHeight: 0,
-            width: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
-        >
-        <div
-          style={{
-            padding: '16px 20px',
-            borderBottom: '1px solid #3d4149',
             fontWeight: 600,
             fontSize: 14,
             color: '#EFECE2',
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            flexShrink: 0,
           }}
         >
           <IconUsersGroup size={18} stroke={1.5} style={{ color: '#6F458F' }} />
-          Open LFG
+          Looking for Group
         </div>
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div
+        <div
+          style={{
+            marginTop: 14,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '10px 12px',
+            alignItems: 'center',
+          }}
+        >
+          <Input
+            allowClear
+            placeholder="Search title or description"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
             style={{
-              flexShrink: 0,
-              padding: '10px 12px 4px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-              borderBottom: '1px solid #353942',
+              flex: '1 1 220px',
+              maxWidth: 420,
+              minWidth: 180,
+              background: '#1B1D23',
+              borderColor: '#3d4149',
+              color: '#EFECE2',
             }}
-          >
-            <Input
-              allowClear
-              placeholder="Search title or description"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              style={{ background: '#1B1D23', borderColor: '#3d4149', color: '#EFECE2' }}
-            />
-            <Select
-              allowClear
-              placeholder="All types"
-              value={typeFilter ?? undefined}
-              onChange={(v) => setTypeFilter(typeof v === 'string' && v.length > 0 ? v : null)}
-              options={typeOptions.map((t) => ({ label: t, value: t }))}
-              style={{ width: '100%' }}
-              styles={{
-                popup: { root: { zIndex: 1100 } },
-              }}
-            />
+          />
+          <Select
+            allowClear
+            placeholder="All types"
+            value={typeFilter ?? undefined}
+            onChange={(v) => setTypeFilter(typeof v === 'string' && v.length > 0 ? v : null)}
+            options={typeOptions.map((t) => ({ label: t, value: t }))}
+            style={{ flex: '0 1 200px', minWidth: 160 }}
+            styles={{
+              popup: { root: { zIndex: 1100 } },
+            }}
+          />
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#6d7178', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Your LFGs{joinedLfgRows.length ? ` (${joinedLfgRows.length})` : ''}
           </div>
-          {isLoadingSidebar ? (
-            <div
-              style={{
-                flex: 1,
-                minHeight: 0,
-                padding: 16,
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}
-            >
-              <Spin tip="Loading…" />
-            </div>
-          ) : sidebarError ? (
-            <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-              <Alert type="error" message={sidebarError.message} showIcon style={{ margin: 16 }} />
-            </div>
+          {joinedLfgRows.length === 0 ? (
+            <div style={{ marginTop: 6, fontSize: 12, color: '#5c5f66' }}>None yet — join a card below to chat here.</div>
           ) : (
-            <div
-              style={{
-                flex: 1,
-                minHeight: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-              }}
-            >
-              <LfgBrowseList
-                rows={filteredBrowseRows}
-                selectedFezId={selectedFezId}
-                onSelectFez={setSelectedFezId}
-                emptyLabel={listEmptyLabel}
-              />
+            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {joinedLfgRows.map((fez, i) => {
+                const id = canonicalFezId(fez);
+                const key = id ?? `joined-chip-${i}`;
+                return (
+                  <Button
+                    key={key}
+                    type={chatDrawerFezId === id ? 'primary' : 'default'}
+                    size="small"
+                    disabled={!id}
+                    onClick={() => id && setChatDrawerFezId(id)}
+                    style={
+                      chatDrawerFezId === id
+                        ? undefined
+                        : {
+                            background: '#2a2d34',
+                            borderColor: '#3d4149',
+                            color: '#B89BC9',
+                          }
+                    }
+                  >
+                    {fez.title ?? id ?? 'LFG'}
+                  </Button>
+                );
+              })}
             </div>
           )}
         </div>
-        <div style={{ flexShrink: 0, borderTop: '1px solid #3d4149', background: '#23262c' }}>
-          <Collapse
-            bordered={false}
-            defaultActiveKey={[]}
-            style={{ background: 'transparent' }}
-            items={[
-              {
-                key: 'joined',
-                label: (
-                  <span style={{ fontSize: 12, color: '#6d7178', fontWeight: 500 }}>
-                    Your LFGs{joinedLfgRows.length ? ` (${joinedLfgRows.length})` : ''}
-                  </span>
-                ),
-                children: (
-                  <LfgJoinedList rows={joinedLfgRows} selectedFezId={selectedFezId} onSelectFez={setSelectedFezId} />
-                ),
-              },
-            ]}
-          />
-        </div>
-        </div>
-      </Layout.Sider>
-      <Layout.Content
+      </div>
+
+      <div
         style={{
-          flex: 1,
-          minWidth: 0,
-          minHeight: 0,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
+          flexShrink: 0,
+          padding: '12px 20px 16px',
+          borderBottom: '1px solid #3d4149',
           background: '#1B1D23',
         }}
       >
-        {!selectedFezId ? (
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#7A7490',
-              fontSize: 14,
-            }}
-          >
-            Select an open LFG to see details, or expand Your LFGs to open a chat
+        <div className="events-week-toolbar">
+          <Button type="text" onClick={() => setSelectedDay((d) => d.subtract(1, 'week'))} style={{ color: '#6F458F' }}>
+            ← Previous week
+          </Button>
+          <Typography.Text strong style={{ color: '#EFECE2', fontSize: 14, flex: 1, textAlign: 'center' }}>
+            {weekStart.format('MMM D')} – {weekEnd.format('MMM D, YYYY')}
+          </Typography.Text>
+          <Button type="text" onClick={() => setSelectedDay((d) => d.add(1, 'week'))} style={{ color: '#6F458F' }}>
+            Next week →
+          </Button>
+          <Button size="small" onClick={() => setSelectedDay(dayjs())} style={{ marginLeft: 8 }}>
+            Today
+          </Button>
+        </div>
+        <div className="events-week-strip" role="row" aria-label="LFG listings by day" style={{ marginTop: 12 }}>
+          {weekDays.map((day) => {
+            const key = day.format('YYYY-MM-DD');
+            const n = lfgByDay.get(key) ?? 0;
+            const isSelected = selectedDay.isSame(day, 'day');
+            const isToday = day.isSame(dayjs(), 'day');
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`events-week-day${isSelected ? ' events-week-day-selected' : ''}${
+                  isToday ? ' events-week-day-today' : ''
+                }`}
+                onClick={() => setSelectedDay(day)}
+              >
+                <span className="events-week-day-dow">{day.format('ddd')}</span>
+                <span className="events-week-day-num">{day.date()}</span>
+                {n > 0 ? (
+                  <span className="events-week-day-count" title={`${n} LFG listing(s)`}>
+                    {n} LFG{n === 1 ? '' : 's'}
+                  </span>
+                ) : (
+                  <span className="events-week-day-count events-week-day-count-empty"> </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 20 }}>
+        {isLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+            <Spin tip="Loading…" />
           </div>
-        ) : selectedIsJoined ? (
-          <LfgThreadPanel fezId={selectedFezId} />
+        ) : loadError ? (
+          <Alert type="error" message={loadError.message} showIcon />
+        ) : nothingToShow ? (
+          <div style={{ color: '#7A7490', fontSize: 14, padding: 24, textAlign: 'center' }}>{listEmptyLabel}</div>
         ) : (
-          <LfgInfoPanel fezId={selectedFezId} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {undatedListings.length > 0 ? (
+              <div>
+                <Typography.Text strong style={{ color: '#EFECE2', fontSize: 14, display: 'block', marginBottom: 12 }}>
+                  No set start time
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ color: '#7A7490', fontSize: 12, display: 'block', marginBottom: 12 }}>
+                  These listings don&apos;t include a scheduled start — they&apos;re shown for every day you select.
+                </Typography.Text>
+                <Masonry
+                  gutter={[16, 16]}
+                  columns={{ xs: 1, sm: 2, md: 2, lg: 3, xl: 3 }}
+                  items={undatedMasonryItems}
+                  itemRender={({ data }) => <LfgOpenFezCard fez={data} />}
+                />
+              </div>
+            ) : null}
+            <div>
+              <Typography.Text strong style={{ color: '#EFECE2', fontSize: 14, display: 'block', marginBottom: 12 }}>
+                {selectedDay.format('dddd, MMMM D, YYYY')}
+              </Typography.Text>
+              {datedForSelectedDay.length === 0 ? (
+                <div style={{ color: '#7A7490', fontSize: 13, marginBottom: undatedListings.length ? 0 : 0 }}>
+                  No scheduled LFGs on this day
+                  {undatedListings.length > 0 ? ' (see flexible listings above).' : '.'}
+                </div>
+              ) : (
+                <Masonry
+                  gutter={[16, 16]}
+                  columns={{ xs: 1, sm: 2, md: 2, lg: 3, xl: 3 }}
+                  items={datedMasonryItems}
+                  itemRender={({ data }) => <LfgOpenFezCard fez={data} />}
+                />
+              )}
+            </div>
+          </div>
         )}
-      </Layout.Content>
-    </Layout>
+      </div>
+
+      <Drawer
+        title={null}
+        placement="right"
+        width={440}
+        open={chatDrawerFezId != null}
+        onClose={() => setChatDrawerFezId(null)}
+        destroyOnClose
+        styles={{
+          body: {
+            padding: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            overflow: 'hidden',
+          },
+        }}
+      >
+        {chatDrawerFezId ? (
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <LfgThreadPanel fezId={chatDrawerFezId} />
+          </div>
+        ) : null}
+      </Drawer>
+    </div>
   );
 }

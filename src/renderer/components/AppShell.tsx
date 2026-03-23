@@ -25,7 +25,7 @@ export function AppShell({ messagesPanel, photostreamPanel, calendarPanel, forum
   const menuItems = [
     { key: 'messages', icon: <IconMessages size={18} />, label: 'Messages' },
     { key: 'photostream', icon: <IconPhoto size={18} />, label: 'Photostream' },
-    { key: 'calendar', icon: <IconCalendar size={18} />, label: 'Calendar' },
+    { key: 'calendar', icon: <IconCalendar size={18} />, label: 'Events' },
     { key: 'forums', icon: <IconLayoutList size={18} />, label: 'Forums' },
     { key: 'lfg', icon: <IconUsersGroup size={18} />, label: 'LFG' },
     { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
