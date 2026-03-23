@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Alert, Avatar, Breadcrumb, Button, Empty, List, Spin, Typography } from 'antd';
 import { IconLayoutList } from '@tabler/icons-react';
+import Markdown from 'react-markdown';
+import type { Components } from 'react-markdown';
 import { trpc } from '../lib/trpc';
 import { swiftarrImageThumbUrl } from '../lib/swiftarrImage';
 import { useStore } from '../hooks/useStore';
@@ -72,6 +74,23 @@ function pickTextBody(obj: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+/**
+ * Swiftarr (or clients) sometimes wrap markdown in literal `<Markdown>...</Markdown>` tags
+ * (any element name casing). Strip leading opens and trailing closes until stable so partial
+ * or nested wrappers still unwrap.
+ */
+function stripMarkdownWrapper(s: string): string {
+  const openRe = /^<markdown\b[^>]*>\s*/i;
+  const closeRe = /\s*<\/markdown\s*>$/i;
+  let t = s.trim();
+  let prev: string;
+  do {
+    prev = t;
+    t = t.replace(openRe, '').replace(closeRe, '').trim();
+  } while (t !== prev);
+  return t;
+}
+
 function pickAuthor(obj: Record<string, unknown>): string | undefined {
   const author = obj.author ?? obj.user ?? obj.poster;
   if (typeof author === 'string' && author.length > 0) return author;
@@ -100,6 +119,116 @@ function formatThreadTime(iso?: string): string | undefined {
   return new Date(d).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+const forumPostMarkdownComponents: Components = {
+  p: ({ children }) => <p style={{ margin: '0 0 0.65em', color: 'inherit' }}>{children}</p>,
+  ul: ({ children }) => <ul style={{ margin: '0.35em 0', paddingLeft: '1.25em' }}>{children}</ul>,
+  ol: ({ children }) => <ol style={{ margin: '0.35em 0', paddingLeft: '1.25em' }}>{children}</ol>,
+  li: ({ children }) => <li style={{ margin: '0.15em 0' }}>{children}</li>,
+  a: ({ children, href }) => (
+    <a href={href} style={{ color: '#ADFD43' }} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
+  strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+  em: ({ children }) => <em style={{ fontStyle: 'italic' }}>{children}</em>,
+  blockquote: ({ children }) => (
+    <blockquote
+      style={{
+        borderLeft: '3px solid #353942',
+        margin: '0.5em 0',
+        paddingLeft: 10,
+        color: '#9A9D9A',
+      }}
+    >
+      {children}
+    </blockquote>
+  ),
+  h1: ({ children }) => (
+    <h1 style={{ fontSize: 18, fontWeight: 600, margin: '0.5em 0 0.35em', color: '#EFECE2' }}>{children}</h1>
+  ),
+  h2: ({ children }) => (
+    <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0.5em 0 0.35em', color: '#EFECE2' }}>{children}</h2>
+  ),
+  h3: ({ children }) => (
+    <h3 style={{ fontSize: 15, fontWeight: 600, margin: '0.5em 0 0.35em', color: '#EFECE2' }}>{children}</h3>
+  ),
+  hr: () => <hr style={{ border: 'none', borderTop: '1px solid #353942', margin: '0.75em 0' }} />,
+  pre: ({ children }) => (
+    <pre
+      style={{
+        background: '#121418',
+        padding: 12,
+        borderRadius: 8,
+        overflow: 'auto',
+        margin: '0.5em 0',
+        fontSize: 12,
+        border: '1px solid #353942',
+      }}
+    >
+      {children}
+    </pre>
+  ),
+  code: ({ children, className }) => {
+    const text = String(children);
+    const multiline = text.includes('\n') && text.trim().length > 0;
+    const fenced =
+      (typeof className === 'string' && /^language-/.test(className)) ||
+      (typeof className === 'string' && className.length > 0) ||
+      multiline;
+    if (fenced) {
+      return (
+        <code
+          className={className}
+          style={{
+            display: 'block',
+            background: 'transparent',
+            whiteSpace: 'pre',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: 12,
+          }}
+        >
+          {children}
+        </code>
+      );
+    }
+    return (
+      <code
+        style={{
+          background: '#2a2d33',
+          padding: '2px 5px',
+          borderRadius: 4,
+          fontSize: '0.92em',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        }}
+      >
+        {children}
+      </code>
+    );
+  },
+};
+
+function ForumPostMarkdown({ source }: { source: string }) {
+  if (source === '(No text)') {
+    return (
+      <Typography.Paragraph
+        style={{
+          color: '#7A7490',
+          fontStyle: 'italic',
+          marginBottom: 0,
+          fontSize: 14,
+        }}
+      >
+        {source}
+      </Typography.Paragraph>
+    );
+  }
+  return (
+    <div style={{ color: '#C8C9CC', fontSize: 14, lineHeight: 1.45 }}>
+      <Markdown components={forumPostMarkdownComponents}>{source}</Markdown>
+    </div>
+  );
+}
+
 type ThreadTimelineItem = {
   key: string;
   author?: string;
@@ -121,7 +250,8 @@ function rowToThreadItem(
   isOriginalPost: boolean,
   fallbackKey: string
 ): ThreadTimelineItem | null {
-  const text = pickTextBody(row);
+  const raw = pickTextBody(row);
+  const text = raw != null ? stripMarkdownWrapper(raw) : undefined;
   const key = pickScalarId(row, ['postID', 'postId', 'post_id', 'id']) ?? fallbackKey;
   const body = text?.trim() ? text : '';
   if (!isOriginalPost && !body) return null;
@@ -487,17 +617,7 @@ export function ForumsView() {
                               ) : null}
                               {when ? <span style={{ fontSize: 11, color: '#7A7490' }}>{when}</span> : null}
                             </div>
-                            <Typography.Paragraph
-                              style={{
-                                color: '#C8C9CC',
-                                whiteSpace: 'pre-wrap',
-                                marginBottom: 0,
-                                fontSize: 14,
-                                lineHeight: 1.45,
-                              }}
-                            >
-                              {m.text}
-                            </Typography.Paragraph>
+                            <ForumPostMarkdown source={m.text} />
                           </div>
                         </div>
                       );

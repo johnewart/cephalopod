@@ -750,12 +750,18 @@ export function LfgView() {
         style={{
           background: '#2A2D34',
           borderRight: '1px solid #3d4149',
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-          height: '100%',
         }}
       >
+        <div
+          style={{
+            height: '100%',
+            minHeight: 0,
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
         <div
           style={{
             padding: '16px 20px',
@@ -857,6 +863,7 @@ export function LfgView() {
               },
             ]}
           />
+        </div>
         </div>
       </Layout.Sider>
       <Layout.Content
