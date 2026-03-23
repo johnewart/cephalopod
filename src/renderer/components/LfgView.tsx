@@ -895,7 +895,7 @@ export function LfgView() {
                 {selectedDay.format('dddd, MMMM D, YYYY')}
               </Typography.Text>
               {datedForSelectedDay.length === 0 ? (
-                <div style={{ color: '#7A7490', fontSize: 13, marginBottom: undatedListings.length ? 0 : 0 }}>
+                <div style={{ color: '#7A7490', fontSize: 13 }}>
                   No scheduled LFGs on this day
                   {undatedListings.length > 0 ? ' (see flexible listings above).' : '.'}
                 </div>
