@@ -3,6 +3,7 @@ import { Alert, Empty, Image, Masonry, Spin, Typography } from 'antd';
 import { IconPhoto } from '@tabler/icons-react';
 import { trpc } from '../lib/trpc';
 import { useStore } from '../hooks/useStore';
+import { swapTwitarrThumbToFull, twitarrImageUrl } from '../lib/twitarrImage';
 
 const PAGE_LIMIT = 48;
 
@@ -21,17 +22,6 @@ function extractPhotoRecords(data: unknown): Record<string, unknown>[] {
     if (Array.isArray(v)) return extractPhotoRecords(v);
   }
   return [];
-}
-
-/** Swiftarr serves user uploads at GET /api/v3/image/{thumb|full}/:filename (see ImageController). */
-function swiftarrImageUrl(baseUrl: string, filename: string, size: 'thumb' | 'full'): string {
-  const root = baseUrl.replace(/\/$/, '');
-  return `${root}/api/v3/image/${size}/${encodeURIComponent(filename)}`;
-}
-
-/** If URL points at a Swiftarr thumbnail, return the corresponding full-size URL for preview. */
-function swapSwiftarrThumbToFull(url: string): string {
-  return url.replace(/\/image\/thumb\//, '/image/full/');
 }
 
 function resolveImageSources(
@@ -58,26 +48,26 @@ function resolveImageSources(
     if (typeof c !== 'string' || c.length === 0) continue;
 
     if (/^https?:\/\//i.test(c)) {
-      const preview = swapSwiftarrThumbToFull(c);
+      const preview = swapTwitarrThumbToFull(c);
       return { thumb: c, preview: preview !== c ? preview : c };
     }
 
     if (c.startsWith('/')) {
       const abs = `${root}${c}`;
-      const preview = swapSwiftarrThumbToFull(abs);
+      const preview = swapTwitarrThumbToFull(abs);
       return { thumb: abs, preview: preview !== abs ? preview : abs };
     }
 
     // Bare filename (e.g. PhotostreamImageData.image — UUID.jpg); do not use `${root}/${c}`.
     if (!c.includes('/')) {
       return {
-        thumb: swiftarrImageUrl(baseUrl, c, 'thumb'),
-        preview: swiftarrImageUrl(baseUrl, c, 'full'),
+        thumb: twitarrImageUrl(baseUrl, c, 'thumb'),
+        preview: twitarrImageUrl(baseUrl, c, 'full'),
       };
     }
 
     const abs = `${root}/${c}`;
-    const preview = swapSwiftarrThumbToFull(abs);
+    const preview = swapTwitarrThumbToFull(abs);
     return { thumb: abs, preview: preview !== abs ? preview : abs };
   }
 

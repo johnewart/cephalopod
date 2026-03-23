@@ -1,4 +1,5 @@
 import { existsSync } from 'fs';
+import { release as osRelease } from 'node:os';
 import { app, BrowserWindow, nativeImage } from 'electron';
 import { join } from 'path';
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
@@ -33,6 +34,59 @@ const appIconImage = (() => {
 
 let mainWindow: BrowserWindow | null = null;
 
+const WINDOW_BG = '#16171C';
+
+function isWindows11OrNewerBuild(): boolean {
+  if (process.platform !== 'win32') return false;
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(osRelease());
+  if (!m) return false;
+  const build = parseInt(m[3], 10);
+  return build >= 22000;
+}
+
+function getWindowChromeOptions(): {
+  browserOptions: Electron.BrowserWindowConstructorOptions;
+  /** Passed to renderer via `webPreferences.additionalArguments` (read in preload). */
+  rendererArgvFlags: string[];
+} {
+  const rendererArgvFlags: string[] = [];
+
+  if (process.platform === 'darwin') {
+    rendererArgvFlags.push('--ceph-hidden-inset');
+    return {
+      rendererArgvFlags,
+      browserOptions: {
+        backgroundColor: WINDOW_BG,
+        titleBarStyle: 'hiddenInset',
+        trafficLightPosition: { x: 16, y: 14 },
+      },
+    };
+  }
+
+  if (process.platform === 'win32' && isWindows11OrNewerBuild()) {
+    rendererArgvFlags.push('--ceph-titlebar-overlay');
+    return {
+      rendererArgvFlags,
+      browserOptions: {
+        backgroundColor: WINDOW_BG,
+        frame: false,
+        titleBarOverlay: {
+          color: WINDOW_BG,
+          symbolColor: '#EFECE2',
+          height: 32,
+        },
+      },
+    };
+  }
+
+  return {
+    rendererArgvFlags,
+    browserOptions: {
+      backgroundColor: WINDOW_BG,
+    },
+  };
+}
+
 const trpcServer = createHTTPServer({
   middleware: cors(),
   router: appRouter,
@@ -53,16 +107,20 @@ trpcServer.listen(TRPC_PORT);
 console.log('[Cephalopod] tRPC HTTP server listening on port', TRPC_PORT);
 
 function createWindow() {
+  const { browserOptions, rendererArgvFlags } = getWindowChromeOptions();
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     show: false,
     ...(appIconImage ? { icon: appIconImage } : {}),
+    ...browserOptions,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      additionalArguments: rendererArgvFlags,
     },
   });
 

@@ -44,6 +44,16 @@ html, body, #root {
   color: #EFECE2 !important;
 }
 
+/* Left nav — slightly smaller labels than default Ant Menu */
+.app-sider-menu.ant-menu.ant-menu-inline .ant-menu-item,
+.app-sider-menu.ant-menu.ant-menu-inline .ant-menu-submenu-title {
+  font-size: 13px;
+}
+
+.app-sider-menu.ant-menu.ant-menu-inline .ant-menu-item .ant-menu-title-content {
+  font-size: 13px;
+}
+
 .ant-btn-primary {
   background: #6f458f !important;
   border-color: #6f458f !important;

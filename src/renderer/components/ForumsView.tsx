@@ -6,10 +6,10 @@ import type { Components } from 'react-markdown';
 import { trpc } from '../lib/trpc';
 import {
   resolveMarkdownImageSrc,
-  swiftarrImageThumbUrl,
-  swiftarrImageUrl,
-  swapSwiftarrThumbToFull,
-} from '../lib/swiftarrImage';
+  twitarrImageThumbUrl,
+  twitarrImageUrl,
+  swapTwitarrThumbToFull,
+} from '../lib/twitarrImage';
 import { useStore } from '../hooks/useStore';
 
 function isRecord(x: unknown): x is Record<string, unknown> {
@@ -41,7 +41,7 @@ function pickStringField(obj: Record<string, unknown>, keys: string[]): string |
   return undefined;
 }
 
-/** Swiftarr often returns numeric ids (e.g. postID: 113) while OpenAPI paths use string. */
+/** Twitarr often returns numeric ids (e.g. postID: 113) while OpenAPI paths use string. */
 function pickScalarId(obj: Record<string, unknown>, keys: string[]): string | undefined {
   for (const k of keys) {
     const v = obj[k];
@@ -56,7 +56,7 @@ function pickCategoryRowId(obj: Record<string, unknown>): string | undefined {
   return pickStringField(obj, ['categoryID', 'categoryId', 'category_id', 'id']);
 }
 
-/** Forum rows: Swiftarr may use a misleading generic `id`; prefer forum* keys first. */
+/** Forum rows: Twitarr may use a misleading generic `id`; prefer forum* keys first. */
 function pickForumRowId(obj: Record<string, unknown>): string | undefined {
   return pickStringField(obj, ['forumID', 'forumId', 'forum_id', 'id']);
 }
@@ -67,7 +67,7 @@ function pickTitle(obj: Record<string, unknown>): string {
   );
 }
 
-/** Plain text from forum post / thread bodies (Swiftarr shapes vary). */
+/** Plain text from forum post / thread bodies (Twitarr shapes vary). */
 function pickTextBody(obj: Record<string, unknown>): string | undefined {
   const direct = pickStringField(obj, ['text', 'markdown', 'html', 'body', 'content', 'message']);
   if (direct) return direct;
@@ -80,7 +80,7 @@ function pickTextBody(obj: Record<string, unknown>): string | undefined {
 }
 
 /**
- * Swiftarr (or clients) sometimes wrap markdown in literal `<Markdown>...</Markdown>` tags
+ * Twitarr (or clients) sometimes wrap markdown in literal `<Markdown>...</Markdown>` tags
  * (any element name casing). Strip leading opens and trailing closes until stable so partial
  * or nested wrappers still unwrap.
  */
@@ -117,7 +117,7 @@ function pickCreatedAt(obj: Record<string, unknown>): string | undefined {
   return pickStringField(obj, ['createdAt', 'created_at', 'timestamp', 'postedAt', 'date']);
 }
 
-/** Forum post attachment filenames (Swiftarr `images` array). */
+/** Forum post attachment filenames (Twitarr `images` array). */
 function pickPostImages(obj: Record<string, unknown>): string[] {
   const raw = obj.images ?? obj.imageList ?? obj.image_list;
   if (!Array.isArray(raw)) return [];
@@ -221,7 +221,7 @@ function createForumPostMarkdownComponents(baseUrl: string): Components {
     img: ({ src, alt }) => {
       if (typeof src !== 'string' || !src.trim()) return null;
       const resolved = resolveMarkdownImageSrc(baseUrl, src);
-      const previewSrc = swapSwiftarrThumbToFull(resolved);
+      const previewSrc = swapTwitarrThumbToFull(resolved);
       const preview = previewSrc !== resolved ? { src: previewSrc } : true;
       return (
         <span style={{ display: 'block', margin: '0.5em 0', maxWidth: '100%' }}>
@@ -281,8 +281,8 @@ function ForumPostAttachedImages({ baseUrl, filenames }: { baseUrl: string; file
       }}
     >
       {filenames.map((name) => {
-        const thumb = swiftarrImageUrl(baseUrl, name, 'thumb');
-        const full = swiftarrImageUrl(baseUrl, name, 'full');
+        const thumb = twitarrImageUrl(baseUrl, name, 'thumb');
+        const full = twitarrImageUrl(baseUrl, name, 'full');
         return (
           <Image
             key={name}
@@ -640,7 +640,7 @@ export function ForumsView() {
                       const when = formatThreadTime(m.createdAt);
                       const avatarSrc =
                         baseUrl && m.userImage
-                          ? swiftarrImageThumbUrl(baseUrl, m.userImage)
+                          ? twitarrImageThumbUrl(baseUrl, m.userImage)
                           : undefined;
                       return (
                         <div

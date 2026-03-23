@@ -15,7 +15,7 @@ import {
   IconUsersGroup,
 } from '@tabler/icons-react';
 import { trpc } from '../lib/trpc';
-import { swiftarrImageThumbUrl, swiftarrUserIdenticonUrl } from '../lib/swiftarrImage';
+import { twitarrImageThumbUrl, twitarrUserIdenticonUrl } from '../lib/twitarrImage';
 import { useStore } from '../hooks/useStore';
 
 function isRecord(x: unknown): x is Record<string, unknown> {
@@ -33,6 +33,11 @@ function pickStringField(obj: Record<string, unknown>, keys: string[]): string |
 type UserHeaderLike = {
   username?: string;
   displayName?: string | null;
+  userID?: string;
+  userId?: string;
+  user_id?: string;
+  userImage?: string;
+  user_image?: string;
 };
 
 /** Row from `GET /fez/open` or `GET /fez/joined` (FezData-like). */
@@ -43,6 +48,8 @@ type FezRow = {
   fezType?: string;
   startTime?: string;
   scheduledTime?: string;
+  /** Twitarr `FezData.owner` (`UserHeader`). */
+  owner?: UserHeaderLike;
   members?: {
     participants?: UserHeaderLike[];
     postCount?: number;
@@ -52,7 +59,7 @@ type FezRow = {
 
 const LFG_ICON_COMMON = { size: 20 as const, stroke: 1.5 as const };
 
-/** Pick icon from Swiftarr `fezType` label (heuristic keywords). */
+/** Pick icon from Twitarr `fezType` label (heuristic keywords). */
 function LfgTypeIcon({ fezType, color }: { fezType?: string; color: string }) {
   const style: CSSProperties = { color, flexShrink: 0, marginTop: 2 };
   const t = (fezType ?? '').toLowerCase();
@@ -92,7 +99,7 @@ function fezStartMs(fez: FezRow): number | null {
 
 /**
  * Future-only for open listings: must not have started yet (local clock).
- * Rows with no parseable start are kept (Swiftarr often omits time for flexible LFGs).
+ * Rows with no parseable start are kept (Twitarr often omits time for flexible LFGs).
  */
 function isFezFuture(fez: FezRow, nowMs = Date.now()): boolean {
   const t = fezStartMs(fez);
@@ -108,11 +115,47 @@ function fezLocalDayKey(fez: FezRow): string | null {
 }
 
 /** Text used for quick search (title, type, info fields, first post). */
+/** `FezData.owner` or common fallbacks on the root object. */
+function fezOwnerRecord(fez: FezRow): Record<string, unknown> | null {
+  const r = fez as Record<string, unknown>;
+  const direct = r.owner;
+  if (isRecord(direct)) return direct;
+  for (const k of ['organizer', 'host', 'creator', 'fezOwner', 'createdBy']) {
+    const v = r[k];
+    if (isRecord(v) && (typeof v.username === 'string' || pickStringField(v, ['userID', 'userId', 'user_id', 'id']))) {
+      return v;
+    }
+  }
+  return null;
+}
+
+function userHeaderDisplayLabel(user: Record<string, unknown>): string {
+  const dn = pickStringField(user, ['displayName', 'display_name'])?.trim();
+  if (dn) return dn;
+  return pickStringField(user, ['username', 'user_name']) || 'Someone';
+}
+
+/** Avatar URL for a `UserHeader`-shaped object (same fields as seamail post `author`). */
+function twitarrAvatarForUserHeader(baseUrl: string, user: unknown): string | undefined {
+  if (!baseUrl || !isRecord(user)) return undefined;
+  const img = pickStringField(user, ['userImage', 'user_image', 'image', 'avatarURL', 'avatarUrl', 'avatar']);
+  if (img) return twitarrImageThumbUrl(baseUrl, img);
+  const uid = pickStringField(user, ['userID', 'userId', 'user_id', 'id']);
+  if (uid) return twitarrUserIdenticonUrl(baseUrl, uid);
+  return undefined;
+}
+
 function fezSearchBlob(fez: FezRow): string {
   const r = fez as Record<string, unknown>;
   const parts: string[] = [];
   if (fez.title) parts.push(fez.title);
   if (fez.fezType) parts.push(fez.fezType);
+  const ownerRec = fezOwnerRecord(fez);
+  if (ownerRec) {
+    parts.push(userHeaderDisplayLabel(ownerRec));
+    const u = pickStringField(ownerRec, ['username', 'user_name']);
+    if (u) parts.push(u);
+  }
   const info =
     pickStringField(r, ['info', 'details', 'detail', 'description', 'body']) ??
     pickStringField(r, ['activity', 'activityDescription', 'activity_description']);
@@ -220,16 +263,11 @@ function fezzesFromRoot(data: unknown): FezRow[] {
   return [];
 }
 
-/** Resolve avatar URL from Swiftarr fez post `author` (UserHeader-like). */
+/** Resolve avatar URL from Twitarr fez post `author` (UserHeader-like). */
 function postAuthorAvatarSrc(baseUrl: string, post: unknown): string | undefined {
   if (!baseUrl || !isRecord(post)) return undefined;
   const author = post.author;
-  if (!isRecord(author)) return undefined;
-  const img = pickStringField(author, ['userImage', 'user_image', 'image', 'avatarURL', 'avatarUrl', 'avatar']);
-  if (img) return swiftarrImageThumbUrl(baseUrl, img);
-  const uid = pickStringField(author, ['userID', 'userId', 'user_id', 'id']);
-  if (uid) return swiftarrUserIdenticonUrl(baseUrl, uid);
-  return undefined;
+  return twitarrAvatarForUserHeader(baseUrl, author);
 }
 
 function formatMetaWhen(iso?: string): string | undefined {
@@ -266,6 +304,7 @@ function LfgMetaRow({ label, children }: { label: string; children: ReactNode })
 
 /** Shared detail body (same fields as the former right-hand info panel). */
 function LfgFezDetailBody({ fez, fezId }: { fez: FezRow; fezId: string }) {
+  const baseUrl = useStore((s) => s.server.baseUrl ?? '');
   const utils = trpc.useUtils();
   const joinMutation = trpc.fezJoin.useMutation({
     onSuccess: () => {
@@ -312,6 +351,12 @@ function LfgFezDetailBody({ fez, fezId }: { fez: FezRow; fezId: string }) {
     return p.username ?? 'Someone';
   });
 
+  const ownerRec = fezOwnerRecord(fez);
+  const organizerName = ownerRec ? userHeaderDisplayLabel(ownerRec) : null;
+  const organizerUsername = ownerRec ? pickStringField(ownerRec, ['username', 'user_name']) : '';
+  const organizerAvatar = ownerRec && baseUrl ? twitarrAvatarForUserHeader(baseUrl, ownerRec) : undefined;
+  const organizerInitial = (organizerUsername || organizerName || '?').charAt(0).toUpperCase();
+
   return (
     <div style={{ color: '#EFECE2' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -320,6 +365,40 @@ function LfgFezDetailBody({ fez, fezId }: { fez: FezRow; fezId: string }) {
           {title}
         </h2>
       </div>
+      {ownerRec ? (
+        <div
+          style={{
+            marginTop: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '10px 12px',
+            borderRadius: 8,
+            background: '#1f2228',
+            border: '1px solid #353942',
+            minWidth: 0,
+          }}
+        >
+          <Avatar
+            size={40}
+            src={organizerAvatar}
+            style={{ background: '#365563', color: '#EFECE2', borderRadius: 8, flexShrink: 0 }}
+          >
+            {organizerInitial}
+          </Avatar>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#7A7490', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Organizer
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#EFECE2', lineHeight: 1.35 }}>
+              {organizerName}
+              {organizerUsername ? (
+                <span style={{ fontWeight: 500, color: '#9A9D9A' }}> @{organizerUsername}</span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <LfgMetaRow label="When">{when || '—'}</LfgMetaRow>
         <LfgMetaRow label="Where">{location ?? '—'}</LfgMetaRow>

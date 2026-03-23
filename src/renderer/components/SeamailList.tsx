@@ -8,14 +8,14 @@ interface SeamailListProps {
   onSelectFez: (fezId: string) => void;
 }
 
-/** Swiftarr `UserHeader` as returned on fez member lists. */
+/** Twitarr `UserHeader` as returned on fez member lists. */
 type UserHeaderLike = {
   userID?: string;
   username?: string;
   displayName?: string | null;
 };
 
-/** Row shape from Swiftarr `GET /fez/joined` (FezData list). */
+/** Row shape from Twitarr `GET /fez/joined` (FezData list). */
 type FezJoinedRow = {
   fezID?: string;
   id?: string;
@@ -59,7 +59,7 @@ function seamailRowTitle(fez: FezJoinedRow, currentUsername: string | null): str
   return fez.title ?? fez.fezID ?? fez.id ?? 'Conversation';
 }
 
-/** Unread posts in a seamail thread: postCount − readCount (Swiftarr FezData.members). */
+/** Unread posts in a seamail thread: postCount − readCount (Twitarr FezData.members). */
 function seamailUnreadCount(fez: FezJoinedRow): number {
   const m = fez.members;
   if (!m || m.isMuted) return 0;
@@ -94,7 +94,7 @@ export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
 
   return (
     <List
-      style={{ flex: 1, overflow: 'auto', padding: '8px 8px 16px' }}
+      style={{ flex: 1, overflow: 'auto', padding: '6px 6px 10px' }}
       dataSource={fezzes as FezJoinedRow[]}
       split={false}
       renderItem={(fez, i) => {
@@ -112,9 +112,9 @@ export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
             key={fezId}
             style={{
               cursor: 'pointer',
-              padding: '10px 12px',
-              margin: '0 4px 4px',
-              borderRadius: 8,
+              padding: '6px 10px',
+              margin: '0 2px 2px',
+              borderRadius: 6,
               background: isSelected ? 'rgba(111, 69, 143, 0.14)' : 'transparent',
               border: isSelected ? '1px solid rgba(111, 69, 143, 0.35)' : '1px solid transparent',
               color: titleColor,
@@ -125,15 +125,15 @@ export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 10,
+                gap: 8,
                 width: '100%',
                 minWidth: 0,
               }}
             >
-              <MessageIcon size={20} stroke={1.5} style={{ color: iconColor, flexShrink: 0 }} />
+              <MessageIcon size={17} stroke={1.5} style={{ color: iconColor, flexShrink: 0 }} />
               <span
                 style={{
-                  fontSize: 14,
+                  fontSize: 13,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -149,22 +149,22 @@ export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
                   aria-label={`${unread} unread`}
                   style={{
                     flexShrink: 0,
-                    minWidth: 22,
-                    height: 22,
-                    padding: unread > 9 ? '0 7px' : '0 6px',
-                    borderRadius: 11,
+                    minWidth: 18,
+                    height: 18,
+                    padding: unread > 9 ? '0 5px' : '0 4px',
+                    borderRadius: 9,
                     background: '#6F458F',
                     color: '#EFECE2',
-                    fontSize: 12,
+                    fontSize: 10,
                     fontWeight: 700,
-                    lineHeight: '22px',
+                    lineHeight: '18px',
                     textAlign: 'center',
                   }}
                 >
                   {unread > 99 ? '99+' : unread}
                 </span>
               ) : (
-                <span style={{ flexShrink: 0, width: 22 }} aria-hidden />
+                <span style={{ flexShrink: 0, width: 18 }} aria-hidden />
               )}
             </div>
           </List.Item>

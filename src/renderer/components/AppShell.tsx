@@ -1,9 +1,12 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useMemo, useState } from 'react';
 import { Layout, Menu, Avatar, Button } from 'antd';
 import { SettingOutlined, LogoutOutlined } from '@ant-design/icons';
 import { IconCalendar, IconLayoutList, IconMessages, IconPhoto, IconUsersGroup } from '@tabler/icons-react';
 import { trpc } from '../lib/trpc';
 import { useStore } from '../hooks/useStore';
+import { twitarrImageThumbUrl, twitarrUserIdenticonUrl } from '../lib/twitarrImage';
+import { profileResponseToFormDefaults } from '../lib/twitarrProfile';
+import { APP_SIDER_WIDTH } from './WindowChrome';
 
 interface AppShellProps {
   messagesPanel: ReactNode;
@@ -11,29 +14,47 @@ interface AppShellProps {
   calendarPanel: ReactNode;
   forumsPanel: ReactNode;
   lfgPanel: ReactNode;
+  settingsPanel: ReactNode;
 }
 
 type NavItem = 'messages' | 'photostream' | 'calendar' | 'forums' | 'lfg' | 'settings';
 
-export function AppShell({ messagesPanel, photostreamPanel, calendarPanel, forumsPanel, lfgPanel }: AppShellProps) {
+export function AppShell({
+  messagesPanel,
+  photostreamPanel,
+  calendarPanel,
+  forumsPanel,
+  lfgPanel,
+  settingsPanel,
+}: AppShellProps) {
   const [activeNav, setActiveNav] = useState<NavItem>('messages');
   const username = useStore((s) => s.auth.username);
+  const baseUrl = useStore((s) => s.server.baseUrl ?? '');
   const logoutMutation = trpc.logout.useMutation();
+  const profileQuery = trpc.userProfileGet.useQuery();
 
   const initial = username ? username.charAt(0).toUpperCase() : '?';
 
+  const userAvatarSrc = useMemo(() => {
+    const d = profileResponseToFormDefaults(profileQuery.data);
+    if (!baseUrl) return undefined;
+    if (d.userImage) return twitarrImageThumbUrl(baseUrl, d.userImage);
+    if (d.userId) return twitarrUserIdenticonUrl(baseUrl, d.userId);
+    return undefined;
+  }, [baseUrl, profileQuery.data]);
+
   const menuItems = [
-    { key: 'messages', icon: <IconMessages size={18} />, label: 'Messages' },
-    { key: 'photostream', icon: <IconPhoto size={18} />, label: 'Photostream' },
-    { key: 'calendar', icon: <IconCalendar size={18} />, label: 'Events' },
-    { key: 'forums', icon: <IconLayoutList size={18} />, label: 'Forums' },
-    { key: 'lfg', icon: <IconUsersGroup size={18} />, label: 'LFG' },
+    { key: 'messages', icon: <IconMessages size={16} stroke={1.5} />, label: 'Messages' },
+    { key: 'photostream', icon: <IconPhoto size={16} stroke={1.5} />, label: 'Photostream' },
+    { key: 'calendar', icon: <IconCalendar size={16} stroke={1.5} />, label: 'Events' },
+    { key: 'forums', icon: <IconLayoutList size={16} stroke={1.5} />, label: 'Forums' },
+    { key: 'lfg', icon: <IconUsersGroup size={16} stroke={1.5} />, label: 'LFG' },
     { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
   ];
 
   return (
     <Layout style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', background: '#16171C' }}>
-      <Layout.Sider width={240} style={{ background: '#2C3031', borderRight: '1px solid #3d4149' }}>
+      <Layout.Sider width={APP_SIDER_WIDTH} style={{ background: '#2C3031', borderRight: '1px solid #3d4149' }}>
         <div
           style={{
             padding: 16,
@@ -64,24 +85,41 @@ export function AppShell({ messagesPanel, photostreamPanel, calendarPanel, forum
           </span>
         </div>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid #3d4149', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Avatar size={36} style={{ background: '#365563', color: '#EFECE2', borderRadius: 8 }}>{initial}</Avatar>
-          <span style={{ fontSize: 14, color: '#9A9D9A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-            {username ?? ''}
+          <Avatar
+            size={36}
+            src={userAvatarSrc}
+            style={{ background: '#365563', color: '#EFECE2', borderRadius: 8, flexShrink: 0 }}
+          >
+            {initial}
+          </Avatar>
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: '#EFECE2',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+            }}
+          >
+            {username ? `@${username}` : ''}
           </span>
         </div>
         <Menu
+          className="app-sider-menu"
           selectedKeys={[activeNav]}
           mode="inline"
           items={menuItems}
           onClick={({ key }) => setActiveNav(key as NavItem)}
-          style={{ flex: 1, borderRight: 'none', marginTop: 8 }}
+          style={{ flex: 1, borderRight: 'none', marginTop: 8, fontSize: 13 }}
         />
         <div style={{ padding: 12, borderTop: '1px solid #3d4149' }}>
           <Button
             icon={<LogoutOutlined />}
             type="text"
             block
-            style={{ color: '#9A9D9A', textAlign: 'left' }}
+            style={{ color: '#9A9D9A', textAlign: 'left', fontSize: 13 }}
             onClick={() => logoutMutation.mutate()}
           >
             Log out
@@ -110,8 +148,8 @@ export function AppShell({ messagesPanel, photostreamPanel, calendarPanel, forum
             {lfgPanel}
           </div>
         ) : (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A7490', fontSize: 14 }}>
-            Settings coming soon
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {settingsPanel}
           </div>
         )}
       </Layout.Content>

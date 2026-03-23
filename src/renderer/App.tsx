@@ -1,4 +1,6 @@
+import { useLayoutEffect } from 'react';
 import { Avatar, Typography } from 'antd';
+import { WindowDragStrip } from './components/WindowChrome';
 import { useStore } from './hooks/useStore';
 import { LoginForm } from './components/LoginForm';
 import { AppShell } from './components/AppShell';
@@ -7,14 +9,21 @@ import { PhotostreamView } from './components/PhotostreamView';
 import { EventsCalendarView } from './components/EventsCalendarView';
 import { ForumsView } from './components/ForumsView';
 import { LfgView } from './components/LfgView';
+import { SettingsView } from './components/SettingsView';
 
 const { Title } = Typography;
 
 export default function App() {
   const isAuthenticated = useStore((s) => s.auth.isAuthenticated);
 
+  useLayoutEffect(() => {
+    const p = window.cephalopod?.platform;
+    if (p) document.documentElement.dataset.platform = p;
+  }, []);
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#16171C', color: '#EFECE2' }}>
+      <WindowDragStrip />
       {!isAuthenticated ? (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32, padding: 40 }}>
           <Avatar
@@ -46,6 +55,7 @@ export default function App() {
           calendarPanel={<EventsCalendarView />}
           forumsPanel={<ForumsView />}
           lfgPanel={<LfgView />}
+          settingsPanel={<SettingsView />}
         />
       )}
     </div>

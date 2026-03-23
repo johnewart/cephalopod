@@ -2,4 +2,9 @@
 
 interface Window {
   zubridge?: unknown;
+  cephalopod?: {
+    platform: NodeJS.Platform;
+    hiddenInsetTitleBar?: boolean;
+    titleBarOverlay?: boolean;
+  };
 }
