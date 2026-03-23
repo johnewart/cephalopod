@@ -25,7 +25,6 @@ export function SeamailView() {
           </div>
         )}
       </Layout.Content>
-      <Layout.Sider width={260} style={{ background: '#23262d', borderLeft: '1px solid #3d4149' }} />
     </Layout>
   );
 }

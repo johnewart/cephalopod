@@ -60,10 +60,14 @@ function parseEvent(rec: Record<string, unknown>): ParsedEvent | null {
   };
 }
 
+function effectiveEventEnd(ev: ParsedEvent): Dayjs {
+  return ev.end?.isValid() ? ev.end : ev.start.add(1, 'hour');
+}
+
 function eventIntersectsDay(ev: ParsedEvent, day: Dayjs): boolean {
   const d0 = day.startOf('day');
   const d1 = day.endOf('day');
-  const evEnd = ev.end?.isValid() ? ev.end : ev.start.add(1, 'hour');
+  const evEnd = effectiveEventEnd(ev);
   return !ev.start.isAfter(d1) && !evEnd.isBefore(d0);
 }
 
@@ -71,7 +75,7 @@ function eventIntersectsDay(ev: ParsedEvent, day: Dayjs): boolean {
 function clipEventToDay(ev: ParsedEvent, day: Dayjs): { startMin: number; endMin: number } | null {
   const d0 = day.startOf('day');
   const d1 = day.endOf('day');
-  const evEnd = ev.end?.isValid() ? ev.end : ev.start.add(1, 'hour');
+  const evEnd = effectiveEventEnd(ev);
   const clipStart = ev.start.isBefore(d0) ? d0 : ev.start;
   const clipEnd = evEnd.isAfter(d1) ? d1 : evEnd;
   if (!clipStart.isBefore(clipEnd)) return null;
@@ -274,7 +278,7 @@ function EventsDayGantt({
               const widthPct = ((seg.endMin - seg.startMin) / span) * 100;
               const top = TOP + lane * (ROW_H + GAP);
               const clippedStart = seg.ev.start.isBefore(day.startOf('day'));
-              const evEnd = seg.ev.end?.isValid() ? seg.ev.end : seg.ev.start.add(1, 'hour');
+              const evEnd = effectiveEventEnd(seg.ev);
               const clippedEnd = evEnd.isAfter(day.endOf('day'));
               const scheduled = myScheduleIds.has(seg.ev.id);
               return (
@@ -342,8 +346,10 @@ export function EventsCalendarView() {
 
   const searchLower = search.trim().toLowerCase();
   const eventsFiltered = useMemo(() => {
-    if (!searchLower) return events;
-    return events.filter((ev) => {
+    const now = dayjs();
+    const futureOnly = events.filter((ev) => effectiveEventEnd(ev).isAfter(now));
+    if (!searchLower) return futureOnly;
+    return futureOnly.filter((ev) => {
       const hay = `${ev.title} ${ev.location} ${ev.description}`.toLowerCase();
       return hay.includes(searchLower);
     });

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Alert, Avatar, Breadcrumb, Button, Empty, List, Spin, Typography } from 'antd';
 import { IconLayoutList } from '@tabler/icons-react';
 import { trpc } from '../lib/trpc';
+import { swiftarrImageThumbUrl } from '../lib/swiftarrImage';
 import { useStore } from '../hooks/useStore';
 
 function isRecord(x: unknown): x is Record<string, unknown> {
@@ -86,12 +87,6 @@ function pickAuthorUserImage(obj: Record<string, unknown>): string | undefined {
     return pickStringField(author, ['userImage', 'user_image', 'image', 'avatarURL', 'avatarUrl', 'avatar']);
   }
   return undefined;
-}
-
-/** Swiftarr user avatars: GET /api/v3/image/thumb/:filename */
-function swiftarrImageThumbUrl(baseUrl: string, filename: string): string {
-  const root = baseUrl.replace(/\/$/, '');
-  return `${root}/api/v3/image/thumb/${encodeURIComponent(filename)}`;
 }
 
 function pickCreatedAt(obj: Record<string, unknown>): string | undefined {

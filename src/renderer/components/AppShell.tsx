@@ -32,9 +32,34 @@ export function AppShell({ messagesPanel, photostreamPanel, calendarPanel, forum
   return (
     <Layout style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', background: '#16171C' }}>
       <Layout.Sider width={240} style={{ background: '#2C3031', borderRight: '1px solid #3d4149' }}>
-        <div style={{ padding: 16, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid #3d4149' }}>
-          <Avatar size={56} src="/images/cephy.png" style={{ flexShrink: 0 }} />
-          <span style={{ fontWeight: 600, fontSize: 15, color: '#EFECE2' }}>Cephalopod</span>
+        <div
+          style={{
+            padding: 16,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 10,
+            borderBottom: '1px solid #3d4149',
+            width: '100%',
+          }}
+        >
+          <Avatar
+            size={112}
+            src="/images/cephy.png"
+            style={{ flexShrink: 0, border: '3px solid #fff', boxSizing: 'content-box' }}
+          />
+          <span
+            style={{
+              fontWeight: 600,
+              fontSize: 15,
+              color: '#EFECE2',
+              lineHeight: 1.2,
+              textAlign: 'center',
+              width: '100%',
+            }}
+          >
+            Cephalopod
+          </span>
         </div>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid #3d4149', display: 'flex', alignItems: 'center', gap: 12 }}>
           <Avatar size={36} style={{ background: '#365563', color: '#EFECE2', borderRadius: 8 }}>{initial}</Avatar>

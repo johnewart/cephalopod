@@ -1,12 +1,75 @@
 import { List, Spin, Alert } from 'antd';
+import { IconMessageCircle, IconMessages } from '@tabler/icons-react';
 import { trpc } from '../lib/trpc';
+import { useStore } from '../hooks/useStore';
 
 interface SeamailListProps {
   selectedFezId: string | null;
   onSelectFez: (fezId: string) => void;
 }
 
+/** Swiftarr `UserHeader` as returned on fez member lists. */
+type UserHeaderLike = {
+  userID?: string;
+  username?: string;
+  displayName?: string | null;
+};
+
+/** Row shape from Swiftarr `GET /fez/joined` (FezData list). */
+type FezJoinedRow = {
+  fezID?: string;
+  id?: string;
+  title?: string;
+  members?: {
+    postCount?: number;
+    readCount?: number;
+    isMuted?: boolean;
+    participants?: UserHeaderLike[];
+  };
+};
+
+function usernamesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (a == null || b == null) return false;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/** True when this row is a 1:1 thread: exactly two participants including the current user. */
+function isDirectMessageRow(fez: FezJoinedRow, currentUsername: string | null): boolean {
+  const parts = fez.members?.participants;
+  if (!parts || parts.length !== 2 || !currentUsername) return false;
+  return parts.some((p) => usernamesMatch(p.username, currentUsername));
+}
+
+function directMessagePeer(
+  fez: FezJoinedRow,
+  currentUsername: string | null,
+): UserHeaderLike | null {
+  if (!isDirectMessageRow(fez, currentUsername)) return null;
+  const parts = fez.members!.participants!;
+  return parts.find((p) => !usernamesMatch(p.username, currentUsername)) ?? null;
+}
+
+/** Primary line for the list row: other user for DMs, fez title for groups. */
+function seamailRowTitle(fez: FezJoinedRow, currentUsername: string | null): string {
+  const peer = directMessagePeer(fez, currentUsername);
+  if (peer) {
+    const name = (peer.displayName && peer.displayName.trim()) || peer.username;
+    if (name) return name;
+  }
+  return fez.title ?? fez.fezID ?? fez.id ?? 'Conversation';
+}
+
+/** Unread posts in a seamail thread: postCount − readCount (Swiftarr FezData.members). */
+function seamailUnreadCount(fez: FezJoinedRow): number {
+  const m = fez.members;
+  if (!m || m.isMuted) return 0;
+  const postCount = m.postCount ?? 0;
+  const readCount = m.readCount ?? 0;
+  return Math.max(0, postCount - readCount);
+}
+
 export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
+  const currentUsername = useStore((s) => s.auth.username);
   const { data, isLoading, error } = trpc.fezJoined.useQuery();
 
   if (isLoading) {
@@ -32,11 +95,18 @@ export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
   return (
     <List
       style={{ flex: 1, overflow: 'auto', padding: '8px 8px 16px' }}
-      dataSource={fezzes}
+      dataSource={fezzes as FezJoinedRow[]}
       split={false}
-      renderItem={(fez: { fezID?: string; id?: string; title?: string }, i: number) => {
+      renderItem={(fez, i) => {
         const fezId = fez.fezID ?? fez.id ?? String(i);
         const isSelected = selectedFezId === fezId;
+        const unread = seamailUnreadCount(fez);
+        const titleColor = isSelected ? '#ADFD43' : '#EFECE2';
+        const iconColor = isSelected ? '#ADFD43' : '#7A7490';
+        const isDm = isDirectMessageRow(fez, currentUsername);
+        const rowTitle = seamailRowTitle(fez, currentUsername);
+        const MessageIcon = isDm ? IconMessageCircle : IconMessages;
+
         return (
           <List.Item
             key={fezId}
@@ -47,13 +117,56 @@ export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
               borderRadius: 8,
               background: isSelected ? 'rgba(173, 253, 67, 0.14)' : 'transparent',
               border: isSelected ? '1px solid rgba(173, 253, 67, 0.35)' : '1px solid transparent',
-              color: isSelected ? '#ADFD43' : '#EFECE2',
+              color: titleColor,
             }}
             onClick={() => onSelectFez(fezId)}
           >
-            <span style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
-              {fez.title ?? fez.fezID ?? fez.id ?? 'Conversation'}
-            </span>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                width: '100%',
+                minWidth: 0,
+              }}
+            >
+              <MessageIcon size={20} stroke={1.5} style={{ color: iconColor, flexShrink: 0 }} />
+              <span
+                style={{
+                  fontSize: 14,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  flex: 1,
+                  minWidth: 0,
+                  color: titleColor,
+                }}
+              >
+                {rowTitle}
+              </span>
+              {unread > 0 ? (
+                <span
+                  aria-label={`${unread} unread`}
+                  style={{
+                    flexShrink: 0,
+                    minWidth: 22,
+                    height: 22,
+                    padding: unread > 9 ? '0 7px' : '0 6px',
+                    borderRadius: 11,
+                    background: '#ADFD43',
+                    color: '#1B1D23',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    lineHeight: '22px',
+                    textAlign: 'center',
+                  }}
+                >
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              ) : (
+                <span style={{ flexShrink: 0, width: 22 }} aria-hidden />
+              )}
+            </div>
           </List.Item>
         );
       }}

@@ -128,8 +128,27 @@ export const appRouter = router({
       const { token } = store.getState().auth;
       if (!baseUrl || !token) throw new Error('Not authenticated');
       configureOpenAPI(baseUrl, token);
-      const result = await FezService.fezGet(input.fezId);
-      return result as unknown;
+      // Swiftarr paginates posts: without ?start= it uses readCount to pick a window, so after many
+      // messages the last page can be a single post (e.g. right after sending). Load from the start.
+      const fezId = normalizeSwiftarrUuid(input.fezId);
+      const root = (OpenAPI.BASE || '').replace(/\/$/, '');
+      const url = `${root}/fez/${encodeURIComponent(fezId)}?start=0&limit=200`;
+      const res = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) {
+        let detail = '';
+        try {
+          detail = (await res.text()).slice(0, 500);
+        } catch {
+          detail = res.statusText;
+        }
+        throw new Error(`Seamail thread failed to load (${res.status}): ${detail}`);
+      }
+      return (await res.json()) as unknown;
     }),
 
   fezPostAdd: publicProcedure
