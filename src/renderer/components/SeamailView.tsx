@@ -1,13 +1,16 @@
 import { useState } from 'react';
-import { IconMessages } from '@tabler/icons-react';
+import { Button } from 'antd';
+import { IconMessages, IconPlus } from '@tabler/icons-react';
 import { SeamailList } from './SeamailList';
 import { SeamailConversation } from './SeamailConversation';
+import { SeamailNewConversationModal } from './SeamailNewConversationModal';
 
 /** Match `ForumsView` categories column width and chrome. */
 const LIST_CARD_WIDTH = 300;
 
 export function SeamailView() {
   const [selectedFezId, setSelectedFezId] = useState<string | null>(null);
+  const [newConversationOpen, setNewConversationOpen] = useState(false);
 
   return (
     <div
@@ -50,8 +53,17 @@ export function SeamailView() {
             background: '#24272e',
           }}
         >
-          <IconMessages size={16} stroke={1.5} style={{ color: '#6F458F' }} />
-          Messages
+          <IconMessages size={16} stroke={1.5} style={{ color: '#6F458F', flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Messages</span>
+          <Button
+            type="text"
+            size="small"
+            icon={<IconPlus size={18} stroke={1.5} />}
+            onClick={() => setNewConversationOpen(true)}
+            style={{ color: '#EFECE2', flexShrink: 0, padding: '0 6px' }}
+            aria-label="Start new conversation"
+            title="New conversation"
+          />
         </div>
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <SeamailList selectedFezId={selectedFezId} onSelectFez={setSelectedFezId} />
@@ -78,6 +90,11 @@ export function SeamailView() {
           </div>
         )}
       </div>
+      <SeamailNewConversationModal
+        open={newConversationOpen}
+        onClose={() => setNewConversationOpen(false)}
+        onCreated={(fezId) => setSelectedFezId(fezId)}
+      />
     </div>
   );
 }

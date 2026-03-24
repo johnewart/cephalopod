@@ -1,6 +1,6 @@
 import { existsSync } from 'fs';
 import { release as osRelease } from 'node:os';
-import { app, BrowserWindow, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeImage } from 'electron';
 import { join } from 'path';
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
 import cors from 'cors';
@@ -137,6 +137,12 @@ function createWindow() {
   bridge.subscribe([mainWindow]);
   app.on('quit', () => bridge.subscribe([mainWindow]).unsubscribe());
 }
+
+ipcMain.handle('ceph:set-dock-badge', (_event, count: unknown) => {
+  if (process.platform !== 'darwin' || !app.dock) return;
+  const n = typeof count === 'number' && Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  app.dock.setBadge(n > 0 ? (n > 99 ? '99+' : String(n)) : '');
+});
 
 app.whenReady().then(() => {
   if (process.platform === 'darwin' && appIconImage) app.dock.setIcon(appIconImage);

@@ -7,7 +7,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "start": "NODE_ENV=production electron ."
+    "start": "NODE_ENV=production electron .",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tabler/icons-react": "^3.40.0",
@@ -35,6 +36,7 @@
     "electron-vite": "^2.3.0",
     "patch-package": "^8.0.1",
     "typescript": "^5.6.0",
-    "vite": "^5.4.0"
+    "vite": "^5.4.0",
+    "vitest": "^2.1.9"
   }
 }

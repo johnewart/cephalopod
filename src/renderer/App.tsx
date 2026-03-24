@@ -8,6 +8,8 @@ import { SeamailView } from './components/SeamailView';
 import { PhotostreamView } from './components/PhotostreamView';
 import { EventsCalendarView } from './components/EventsCalendarView';
 import { ForumsView } from './components/ForumsView';
+import { BoardgamesView } from './components/BoardgamesView';
+import { HuntsView } from './components/HuntsView';
 import { LfgView } from './components/LfgView';
 import { SettingsView } from './components/SettingsView';
 
@@ -54,6 +56,8 @@ export default function App() {
           photostreamPanel={<PhotostreamView />}
           calendarPanel={<EventsCalendarView />}
           forumsPanel={<ForumsView />}
+          boardgamesPanel={<BoardgamesView />}
+          huntsPanel={<HuntsView />}
           lfgPanel={<LfgView />}
           settingsPanel={<SettingsView />}
         />

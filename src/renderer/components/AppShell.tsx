@@ -1,29 +1,50 @@
-import { ReactNode, useMemo, useState } from 'react';
-import { Layout, Menu, Avatar, Button } from 'antd';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Layout, Menu, Avatar, Button, Badge } from 'antd';
 import { SettingOutlined, LogoutOutlined } from '@ant-design/icons';
-import { IconCalendar, IconLayoutList, IconMessages, IconPhoto, IconUsersGroup } from '@tabler/icons-react';
+import {
+  IconCalendar,
+  IconChess,
+  IconLayoutList,
+  IconMessages,
+  IconPhoto,
+  IconPuzzle,
+  IconUsersGroup,
+} from '@tabler/icons-react';
 import { trpc } from '../lib/trpc';
 import { useStore } from '../hooks/useStore';
 import { twitarrImageThumbUrl, twitarrUserIdenticonUrl } from '../lib/twitarrImage';
 import { profileResponseToFormDefaults } from '../lib/twitarrProfile';
 import { APP_SIDER_WIDTH } from './WindowChrome';
+import { seamailDirectMessageChatsUnreadTotal, seamailTotalUnread } from '../lib/seamailUnread';
 
 interface AppShellProps {
   messagesPanel: ReactNode;
   photostreamPanel: ReactNode;
   calendarPanel: ReactNode;
   forumsPanel: ReactNode;
+  boardgamesPanel: ReactNode;
+  huntsPanel: ReactNode;
   lfgPanel: ReactNode;
   settingsPanel: ReactNode;
 }
 
-type NavItem = 'messages' | 'photostream' | 'calendar' | 'forums' | 'lfg' | 'settings';
+type NavItem =
+  | 'messages'
+  | 'photostream'
+  | 'calendar'
+  | 'forums'
+  | 'boardgames'
+  | 'hunts'
+  | 'lfg'
+  | 'settings';
 
 export function AppShell({
   messagesPanel,
   photostreamPanel,
   calendarPanel,
   forumsPanel,
+  boardgamesPanel,
+  huntsPanel,
   lfgPanel,
   settingsPanel,
 }: AppShellProps) {
@@ -32,6 +53,68 @@ export function AppShell({
   const baseUrl = useStore((s) => s.server.baseUrl ?? '');
   const logoutMutation = trpc.logout.useMutation();
   const profileQuery = trpc.userProfileGet.useQuery();
+  const fezJoinedQuery = trpc.fezJoined.useQuery(undefined, {
+    refetchInterval: 45_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const unreadTotal = useMemo(
+    () => (fezJoinedQuery.data !== undefined ? seamailTotalUnread(fezJoinedQuery.data) : 0),
+    [fezJoinedQuery.data],
+  );
+
+  const dockChatUnread = useMemo(
+    () =>
+      fezJoinedQuery.data !== undefined ? seamailDirectMessageChatsUnreadTotal(fezJoinedQuery.data, username) : 0,
+    [fezJoinedQuery.data, username],
+  );
+
+  const prevUnreadRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (fezJoinedQuery.data === undefined) return;
+
+    const total = seamailTotalUnread(fezJoinedQuery.data);
+    const prev = prevUnreadRef.current;
+
+    if (prev === null) {
+      prevUnreadRef.current = total;
+      return;
+    }
+
+    if (total > prev) {
+      const delta = total - prev;
+      const inBackground = typeof document !== 'undefined' && document.hidden;
+      const notOnMessages = activeNav !== 'messages';
+      if (inBackground || notOnMessages) {
+        const title = delta === 1 ? 'New message' : 'New messages';
+        const body =
+          delta === 1
+            ? 'You have a new unread seamail message.'
+            : `${delta} new unread seamail messages.`;
+        const show = () => {
+          try {
+            new Notification(title, { body, tag: 'cephalopod-seamail-unread' });
+          } catch {
+            /* ignore */
+          }
+        };
+        if (Notification.permission === 'granted') {
+          show();
+        } else if (Notification.permission === 'default') {
+          void Notification.requestPermission().then((p) => {
+            if (p === 'granted') show();
+          });
+        }
+      }
+    }
+
+    prevUnreadRef.current = total;
+  }, [fezJoinedQuery.data, activeNav]);
+
+  useEffect(() => {
+    window.cephalopod?.setDockUnreadCount?.(dockChatUnread);
+  }, [dockChatUnread]);
 
   const initial = username ? username.charAt(0).toUpperCase() : '?';
 
@@ -43,14 +126,27 @@ export function AppShell({
     return undefined;
   }, [baseUrl, profileQuery.data]);
 
-  const menuItems = [
-    { key: 'messages', icon: <IconMessages size={16} stroke={1.5} />, label: 'Messages' },
-    { key: 'photostream', icon: <IconPhoto size={16} stroke={1.5} />, label: 'Photostream' },
-    { key: 'calendar', icon: <IconCalendar size={16} stroke={1.5} />, label: 'Events' },
-    { key: 'forums', icon: <IconLayoutList size={16} stroke={1.5} />, label: 'Forums' },
-    { key: 'lfg', icon: <IconUsersGroup size={16} stroke={1.5} />, label: 'LFG' },
-    { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
-  ];
+  const menuItems = useMemo(
+    () => [
+      {
+        key: 'messages',
+        icon: <IconMessages size={16} stroke={1.5} />,
+        label: (
+          <Badge count={unreadTotal} size="small" overflowCount={99} color="#6F458F">
+            <span>Messages</span>
+          </Badge>
+        ),
+      },
+      { key: 'photostream', icon: <IconPhoto size={16} stroke={1.5} />, label: 'Photostream' },
+      { key: 'calendar', icon: <IconCalendar size={16} stroke={1.5} />, label: 'Events' },
+      { key: 'forums', icon: <IconLayoutList size={16} stroke={1.5} />, label: 'Forums' },
+      { key: 'boardgames', icon: <IconChess size={16} stroke={1.5} />, label: 'Board games' },
+      { key: 'hunts', icon: <IconPuzzle size={16} stroke={1.5} />, label: 'Hunts' },
+      { key: 'lfg', icon: <IconUsersGroup size={16} stroke={1.5} />, label: 'LFG' },
+      { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
+    ],
+    [unreadTotal],
+  );
 
   return (
     <Layout style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', background: '#16171C' }}>
@@ -142,6 +238,14 @@ export function AppShell({
         ) : activeNav === 'forums' ? (
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {forumsPanel}
+          </div>
+        ) : activeNav === 'boardgames' ? (
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {boardgamesPanel}
+          </div>
+        ) : activeNav === 'hunts' ? (
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {huntsPanel}
           </div>
         ) : activeNav === 'lfg' ? (
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

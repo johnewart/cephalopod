@@ -74,7 +74,10 @@ export function SeamailConversation({ fezId }: SeamailConversationProps) {
   const baseUrl = useStore((s) => s.server.baseUrl ?? '');
   const scrollRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
-  const { data, isLoading, error, dataUpdatedAt } = trpc.fezGet.useQuery({ fezId });
+  const { data, isLoading, error } = trpc.fezGet.useQuery(
+    { fezId },
+    { refetchInterval: 12_000, refetchOnWindowFocus: true },
+  );
   const postMutation = trpc.fezPostAdd.useMutation({
     onSuccess: () => {
       setNewMessage('');
@@ -103,7 +106,7 @@ export function SeamailConversation({ fezId }: SeamailConversationProps) {
   useLayoutEffect(() => {
     if (isLoading || error) return;
     scrollToBottom();
-  }, [isLoading, error, fezId, dataUpdatedAt, posts.length, scrollToBottom]);
+  }, [isLoading, error, fezId, posts.length, scrollToBottom]);
 
   useEffect(() => {
     if (isLoading || error) return;

@@ -6,5 +6,6 @@ interface Window {
     platform: NodeJS.Platform;
     hiddenInsetTitleBar?: boolean;
     titleBarOverlay?: boolean;
+    setDockUnreadCount?: (count: number) => void;
   };
 }

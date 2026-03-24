@@ -1,7 +1,19 @@
 import { router, publicProcedure } from './trpc';
 import { z } from 'zod';
-import { AuthService, EventsService, FezService, ForumService, OpenAPI, PhotostreamService } from 'twitarr-ts';
+import {
+  AuthService,
+  BoardgamesService,
+  EventsService,
+  FezService,
+  ForumService,
+  HuntsService,
+  OpenAPI,
+  PhotostreamService,
+  UsersService,
+} from 'twitarr-ts';
 import { store } from '../store';
+import { getForumViewedIdSet, markForumPostsViewed, mergeForumPayloadReadState } from '../forumViewedPosts';
+import { normalizeTwitarrUuid } from '../normalizeTwitarrUuid';
 
 /** Configure OpenAPI from store state before API calls */
 function configureOpenAPI(baseUrl: string, token?: string | null) {
@@ -61,6 +73,71 @@ async function twitarrFetchJson<T>(method: string, path: string, body?: unknown)
 }
 
 /**
+ * Twitarr `POST /hunts/puzzles/:id/callin` decodes the request body as plain text (not JSON).
+ * Response is JSON (`HuntPuzzleCallInResultData`).
+ */
+async function twitarrPostPlaintextForJson<T>(path: string, plaintextBody: string): Promise<T> {
+  const { baseUrl } = store.getState().server;
+  const { token } = store.getState().auth;
+  if (!baseUrl || !token) throw new Error('Not authenticated');
+  configureOpenAPI(baseUrl, token);
+  const url = `${twitarrApiRoot()}${path.startsWith('/') ? path : `/${path}`}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'text/plain; charset=utf-8',
+      Authorization: `Bearer ${token}`,
+    },
+    body: plaintextBody,
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      detail = (await res.text()).slice(0, 800);
+    } catch {
+      detail = res.statusText;
+    }
+    throw new Error(`Request failed (${res.status}): ${detail}`);
+  }
+  const text = await res.text();
+  if (!text.trim()) return undefined as T;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`Server returned non-JSON (POST ${path}): ${text.slice(0, 300)}`);
+  }
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed) as unknown;
+    } catch {
+      /* keep outer string */
+    }
+  }
+  return parsed as T;
+}
+
+/** Parse fez id from `POST /fez/create` JSON (shape varies by server). */
+function pickCreatedFezId(data: unknown): string | undefined {
+  if (data == null || typeof data !== 'object') return undefined;
+  const o = data as Record<string, unknown>;
+  for (const k of ['fezID', 'id', 'fezId']) {
+    const v = o[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  const fez = o.fez;
+  if (fez && typeof fez === 'object') {
+    const f = fez as Record<string, unknown>;
+    for (const k of ['fezID', 'id', 'fezId']) {
+      const v = f[k];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+  }
+  return undefined;
+}
+
+/**
  * Twitarr `POST /api/v3/user/profile` expects `UserProfileUploadData` with every key present;
  * empty strings clear optional text fields. See `UserController.profileUpdateHandler`.
  */
@@ -76,17 +153,6 @@ const userProfileUpdateBodySchema = z.object({
   discordUsername: z.string(),
   dinnerTeam: z.enum(['red', 'gold', 'sro']).nullable().optional(),
 });
-
-/** Twitarr API UUID path params are often compared lowercase; URLs may carry uppercase from JSON. */
-function normalizeTwitarrUuid(id: string): string {
-  const t = id.trim();
-  if (
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(t)
-  ) {
-    return t.toLowerCase();
-  }
-  return t;
-}
 
 export const appRouter = router({
   // ---- Auth ----
@@ -390,6 +456,68 @@ export const appRouter = router({
       return result as unknown;
     }),
 
+  /** Twitarr `GET /users/match/allnames/:search` — display name / username substring match. */
+  usersMatchAllNames: publicProcedure
+    .input(z.object({ search: z.string().min(2).max(80).trim() }))
+    .query(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const result = await UsersService.usersMatchAllNames(input.search);
+      return result as unknown;
+    }),
+
+  /**
+   * Create a seamail fez with a title, then invite each user via `POST /fez/:id/user/:user/add`.
+   * Create body uses `{ title }`; servers that expect a different shape can be extended later.
+   */
+  fezCreateSeamail: publicProcedure
+    .input(
+      z.object({
+        title: z.string().min(1).max(200).trim(),
+        userIds: z.array(z.string().min(1)).min(1).max(32),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+
+      let created: unknown;
+      let usedTitleInCreate = true;
+      try {
+        created = await twitarrFetchJson<unknown>('POST', '/fez/create', { title: input.title });
+      } catch {
+        usedTitleInCreate = false;
+        created = await twitarrFetchJson<unknown>('POST', '/fez/create', {});
+      }
+
+      const fezIdRaw = pickCreatedFezId(created);
+      if (!fezIdRaw) throw new Error('Server did not return a new conversation id');
+      const fezId = normalizeTwitarrUuid(fezIdRaw);
+
+      if (!usedTitleInCreate) {
+        try {
+          await twitarrFetchJson<unknown>('POST', `/fez/${encodeURIComponent(fezId)}`, { title: input.title });
+        } catch {
+          /* Fez update shape varies; title may stay default until user edits in-app */
+        }
+      }
+
+      for (const uid of input.userIds) {
+        const u = normalizeTwitarrUuid(uid.trim());
+        try {
+          await FezService.fezUserAdd(fezId, u);
+        } catch {
+          /* Often already a participant if create accepted `users`; ignore */
+        }
+      }
+
+      return { fezId };
+    }),
+
   // ---- Photostream ----
   photostreamList: publicProcedure
     .input(
@@ -481,22 +609,158 @@ export const appRouter = router({
     .input(z.object({ forumId: z.string().min(1) }))
     .query(async ({ input }) => {
       const { baseUrl } = store.getState().server;
-      const { token } = store.getState().auth;
+      const { token, username } = store.getState().auth;
       if (!baseUrl || !token) throw new Error('Not authenticated');
       configureOpenAPI(baseUrl, token);
       const result = await ForumService.forumGet(normalizeTwitarrUuid(input.forumId));
-      return result as unknown;
+      const viewed = getForumViewedIdSet(baseUrl, username);
+      return mergeForumPayloadReadState(result as unknown, viewed);
     }),
 
   forumPostGet: publicProcedure
     .input(z.object({ postId: z.string().min(1) }))
     .query(async ({ input }) => {
       const { baseUrl } = store.getState().server;
-      const { token } = store.getState().auth;
+      const { token, username } = store.getState().auth;
       if (!baseUrl || !token) throw new Error('Not authenticated');
       configureOpenAPI(baseUrl, token);
       const result = await ForumService.forumPostGet(normalizeTwitarrUuid(input.postId));
+      const viewed = getForumViewedIdSet(baseUrl, username);
+      return mergeForumPayloadReadState(result as unknown, viewed);
+    }),
+
+  /** Persist locally viewed forum post ids (per server + username); merged into forumGet / forumPostGet as `cephalopodRead`. */
+  forumPostsMarkViewed: publicProcedure
+    .input(z.object({ postIds: z.array(z.string()).min(1).max(500) }))
+    .mutation(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { username } = store.getState().auth;
+      if (!baseUrl || !username) throw new Error('Not authenticated');
+      markForumPostsViewed(baseUrl, username, input.postIds);
+      return { ok: true as const };
+    }),
+
+  // ---- Hunts ----
+  huntsList: publicProcedure.query(async () => {
+    const { baseUrl } = store.getState().server;
+    const { token } = store.getState().auth;
+    if (!baseUrl || !token) throw new Error('Not authenticated');
+    configureOpenAPI(baseUrl, token);
+    const result = await HuntsService.huntsList();
+    return result as unknown;
+  }),
+
+  huntGet: publicProcedure
+    .input(z.object({ huntId: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const id = normalizeTwitarrUuid(input.huntId);
+      const result = await HuntsService.huntGet(id);
       return result as unknown;
+    }),
+
+  huntPuzzleGet: publicProcedure
+    .input(z.object({ puzzleId: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const id = normalizeTwitarrUuid(input.puzzleId);
+      const result = await HuntsService.huntPuzzleGet(id);
+      return result as unknown;
+    }),
+
+  huntPuzzleCallIn: publicProcedure
+    .input(
+      z.object({
+        puzzleId: z.string().min(1),
+        answer: z.string().min(1).max(4000),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const id = normalizeTwitarrUuid(input.puzzleId);
+      return twitarrPostPlaintextForJson<unknown>(
+        `/hunts/puzzles/${encodeURIComponent(id)}/callin`,
+        input.answer,
+      );
+    }),
+
+  // ---- Board games (onboard library) ----
+  boardgamesList: publicProcedure
+    .input(
+      z
+        .object({
+          search: z.string().optional(),
+          favorite: z.boolean().optional(),
+          start: z.number().int().min(0).optional(),
+          limit: z.number().int().min(1).max(200).optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const result = await BoardgamesService.boardgamesList(
+        input?.search,
+        input?.favorite,
+        input?.start,
+        input?.limit ?? 50,
+      );
+      return result as unknown;
+    }),
+
+  boardgameGet: publicProcedure
+    .input(z.object({ gameId: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const id = normalizeTwitarrUuid(input.gameId);
+      const result = await BoardgamesService.boardgameGet(id);
+      return result as unknown;
+    }),
+
+  boardgameExpansions: publicProcedure
+    .input(z.object({ gameId: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const id = normalizeTwitarrUuid(input.gameId);
+      const result = await BoardgamesService.boardgameExpansions(id);
+      return result as unknown;
+    }),
+
+  boardgameFavoriteAdd: publicProcedure
+    .input(z.object({ gameId: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const id = normalizeTwitarrUuid(input.gameId);
+      await BoardgamesService.boardgameFavoriteAdd(id);
+      return { ok: true as const };
+    }),
+
+  boardgameFavoriteRemove: publicProcedure
+    .input(z.object({ gameId: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const id = normalizeTwitarrUuid(input.gameId);
+      await BoardgamesService.boardgameFavoriteRemoveAlt(id);
+      return { ok: true as const };
     }),
 });
 

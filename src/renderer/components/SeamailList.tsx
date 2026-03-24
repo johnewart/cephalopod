@@ -2,49 +2,24 @@ import { List, Spin, Alert } from 'antd';
 import { IconMessageCircle, IconMessages } from '@tabler/icons-react';
 import { trpc } from '../lib/trpc';
 import { useStore } from '../hooks/useStore';
+import type { FezJoinedRow, UserHeaderLike } from '../lib/seamailUnread';
+import { isFezJoinedDirectMessage, seamailUnreadCount } from '../lib/seamailUnread';
 
 interface SeamailListProps {
   selectedFezId: string | null;
   onSelectFez: (fezId: string) => void;
 }
 
-/** Twitarr `UserHeader` as returned on fez member lists. */
-type UserHeaderLike = {
-  userID?: string;
-  username?: string;
-  displayName?: string | null;
-};
-
-/** Row shape from Twitarr `GET /fez/joined` (FezData list). */
-type FezJoinedRow = {
-  fezID?: string;
-  id?: string;
-  title?: string;
-  members?: {
-    postCount?: number;
-    readCount?: number;
-    isMuted?: boolean;
-    participants?: UserHeaderLike[];
-  };
-};
-
 function usernamesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
   if (a == null || b == null) return false;
   return a.trim().toLowerCase() === b.trim().toLowerCase();
-}
-
-/** True when this row is a 1:1 thread: exactly two participants including the current user. */
-function isDirectMessageRow(fez: FezJoinedRow, currentUsername: string | null): boolean {
-  const parts = fez.members?.participants;
-  if (!parts || parts.length !== 2 || !currentUsername) return false;
-  return parts.some((p) => usernamesMatch(p.username, currentUsername));
 }
 
 function directMessagePeer(
   fez: FezJoinedRow,
   currentUsername: string | null,
 ): UserHeaderLike | null {
-  if (!isDirectMessageRow(fez, currentUsername)) return null;
+  if (!isFezJoinedDirectMessage(fez, currentUsername)) return null;
   const parts = fez.members!.participants!;
   return parts.find((p) => !usernamesMatch(p.username, currentUsername)) ?? null;
 }
@@ -57,15 +32,6 @@ function seamailRowTitle(fez: FezJoinedRow, currentUsername: string | null): str
     if (name) return name;
   }
   return fez.title ?? fez.fezID ?? fez.id ?? 'Conversation';
-}
-
-/** Unread posts in a seamail thread: postCount − readCount (Twitarr FezData.members). */
-function seamailUnreadCount(fez: FezJoinedRow): number {
-  const m = fez.members;
-  if (!m || m.isMuted) return 0;
-  const postCount = m.postCount ?? 0;
-  const readCount = m.readCount ?? 0;
-  return Math.max(0, postCount - readCount);
 }
 
 export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
@@ -103,7 +69,7 @@ export function SeamailList({ selectedFezId, onSelectFez }: SeamailListProps) {
         const unread = seamailUnreadCount(fez);
         const titleColor = isSelected ? '#6F458F' : '#EFECE2';
         const iconColor = isSelected ? '#6F458F' : '#7A7490';
-        const isDm = isDirectMessageRow(fez, currentUsername);
+        const isDm = isFezJoinedDirectMessage(fez, currentUsername);
         const rowTitle = seamailRowTitle(fez, currentUsername);
         const MessageIcon = isDm ? IconMessageCircle : IconMessages;
 

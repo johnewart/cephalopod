@@ -488,7 +488,10 @@ function LfgThreadPanel({ fezId }: { fezId: string }) {
   const currentUsername = useStore((s) => s.auth.username);
   const scrollRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
-  const { data, isLoading, error, dataUpdatedAt } = trpc.fezGet.useQuery({ fezId });
+  const { data, isLoading, error } = trpc.fezGet.useQuery(
+    { fezId },
+    { refetchInterval: 12_000, refetchOnWindowFocus: true },
+  );
   const postMutation = trpc.fezPostAdd.useMutation({
     onSuccess: () => {
       setNewMessage('');
@@ -528,7 +531,7 @@ function LfgThreadPanel({ fezId }: { fezId: string }) {
   useLayoutEffect(() => {
     if (isLoading || error) return;
     scrollToBottom();
-  }, [isLoading, error, fezId, dataUpdatedAt, posts.length, scrollToBottom]);
+  }, [isLoading, error, fezId, posts.length, scrollToBottom]);
 
   useEffect(() => {
     if (isLoading || error) return;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Alert, Avatar, Breadcrumb, Button, Empty, Image, List, Spin, Typography } from 'antd';
 import { IconLayoutList } from '@tabler/icons-react';
 import Markdown from 'react-markdown';
@@ -316,6 +316,8 @@ type ThreadTimelineItem = {
   userImage?: string;
   /** Attachment filenames from API `images` */
   images: string[];
+  /** Local read state merged in by tRPC from viewed-post store */
+  cephalopodRead: boolean;
 };
 
 function timelineSortMs(iso?: string): number {
@@ -337,6 +339,7 @@ function rowToThreadItem(
   const images = pickPostImages(row);
   if (!isOriginalPost && !body && images.length === 0) return null;
   const textField = body || (images.length ? '' : '(No text)');
+  const cephalopodRead = row.cephalopodRead === true;
   return {
     key,
     author: pickAuthor(row),
@@ -345,13 +348,92 @@ function rowToThreadItem(
     isOriginalPost,
     userImage: pickAuthorUserImage(row),
     images,
+    cephalopodRead,
   };
+}
+
+function isLikelyServerPostId(id: string): boolean {
+  if (!id.trim()) return false;
+  if (/^post-\d+$/i.test(id)) return false;
+  return true;
+}
+
+/** When a post scrolls into view, queue it as viewed (debounced mutation to main store). */
+function ForumPostViewTracker({
+  postId,
+  read,
+  scrollRootRef,
+  onVisible,
+  children,
+}: {
+  postId: string;
+  read: boolean;
+  scrollRootRef: RefObject<HTMLDivElement | null>;
+  onVisible: (id: string) => void;
+  children: ReactNode;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (read || !isLikelyServerPostId(postId)) return;
+    const el = wrapRef.current;
+    const root = scrollRootRef.current;
+    if (!el || !root) return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting && e.intersectionRatio >= 0.2) onVisible(postId);
+        }
+      },
+      { root, threshold: [0, 0.2, 0.5, 1] },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [read, postId, onVisible, scrollRootRef]);
+
+  return <div ref={wrapRef}>{children}</div>;
 }
 
 export function ForumsView() {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [forumId, setForumId] = useState<string | null>(null);
   const baseUrl = useStore((s) => s.server.baseUrl ?? '');
+  const threadScrollRef = useRef<HTMLDivElement>(null);
+  const markPendingRef = useRef<Set<string>>(new Set());
+  const markFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const utils = trpc.useUtils();
+  const markViewedMutation = trpc.forumPostsMarkViewed.useMutation({
+    onSuccess: () => {
+      if (forumId) void utils.forumGet.invalidate({ forumId });
+    },
+  });
+
+  const flushMarkViewed = useCallback(() => {
+    markFlushTimerRef.current = null;
+    const ids = [...markPendingRef.current];
+    markPendingRef.current.clear();
+    if (ids.length > 0) markViewedMutation.mutate({ postIds: ids });
+  }, [markViewedMutation]);
+
+  const onForumPostVisible = useCallback(
+    (postId: string) => {
+      if (!forumId || !isLikelyServerPostId(postId)) return;
+      markPendingRef.current.add(postId);
+      if (markFlushTimerRef.current) clearTimeout(markFlushTimerRef.current);
+      markFlushTimerRef.current = setTimeout(flushMarkViewed, 450);
+    },
+    [forumId, flushMarkViewed],
+  );
+
+  useEffect(() => {
+    markPendingRef.current.clear();
+    if (markFlushTimerRef.current) {
+      clearTimeout(markFlushTimerRef.current);
+      markFlushTimerRef.current = null;
+    }
+  }, [forumId]);
 
   const categoriesQuery = trpc.forumCategories.useQuery(undefined, {
     staleTime: 5 * 60 * 1000,
@@ -626,6 +708,7 @@ export function ForumsView() {
                     </Typography.Text>
                   </div>
                   <div
+                    ref={threadScrollRef}
                     style={{
                       flex: 1,
                       minHeight: 0,
@@ -642,17 +725,28 @@ export function ForumsView() {
                         baseUrl && m.userImage
                           ? twitarrImageThumbUrl(baseUrl, m.userImage)
                           : undefined;
+                      const leftBorder = m.isOriginalPost
+                        ? '3px solid #6F458F'
+                        : !m.cephalopodRead
+                          ? '3px solid rgba(196, 132, 60, 0.8)'
+                          : undefined;
                       return (
-                        <div
+                        <ForumPostViewTracker
                           key={`${m.key}-${idx}`}
-                          style={{
-                            alignSelf: 'stretch',
-                            maxWidth: '100%',
-                            display: 'flex',
-                            gap: 12,
-                            alignItems: 'flex-start',
-                          }}
+                          postId={m.key}
+                          read={m.cephalopodRead}
+                          scrollRootRef={threadScrollRef}
+                          onVisible={onForumPostVisible}
                         >
+                          <div
+                            style={{
+                              alignSelf: 'stretch',
+                              maxWidth: '100%',
+                              display: 'flex',
+                              gap: 12,
+                              alignItems: 'flex-start',
+                            }}
+                          >
                           {avatarSrc ? (
                             <Avatar src={avatarSrc} size={40} style={{ flexShrink: 0 }} />
                           ) : (
@@ -669,7 +763,7 @@ export function ForumsView() {
                               minWidth: 0,
                               borderRadius: 12,
                               border: '1px solid #353942',
-                              borderLeft: m.isOriginalPost ? '3px solid #6F458F' : undefined,
+                              borderLeft: leftBorder,
                               background: m.isOriginalPost ? 'rgba(111, 69, 143, 0.07)' : '#1b1e24',
                               padding: '10px 14px',
                             }}
@@ -699,6 +793,19 @@ export function ForumsView() {
                                 </span>
                               ) : null}
                               {when ? <span style={{ fontSize: 11, color: '#7A7490' }}>{when}</span> : null}
+                              {!m.cephalopodRead ? (
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: 0.4,
+                                    color: 'rgba(196, 132, 60, 0.95)',
+                                  }}
+                                >
+                                  Unread
+                                </span>
+                              ) : null}
                             </div>
                             <Image.PreviewGroup>
                               <ForumPostMarkdown source={m.text} baseUrl={baseUrl} />
@@ -706,6 +813,7 @@ export function ForumsView() {
                             </Image.PreviewGroup>
                           </div>
                         </div>
+                        </ForumPostViewTracker>
                       );
                     })}
                   </div>
