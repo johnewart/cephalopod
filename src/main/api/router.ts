@@ -13,6 +13,7 @@ import {
 } from 'twitarr-ts';
 import { store } from '../store';
 import { getForumViewedIdSet, markForumPostsViewed, mergeForumPayloadReadState } from '../forumViewedPosts';
+import { normalizeTwitarrImageBase64 } from '../normalizeTwitarrImageBase64';
 import { normalizeTwitarrUuid } from '../normalizeTwitarrUuid';
 
 /** Configure OpenAPI from store state before API calls */
@@ -331,10 +332,7 @@ export const appRouter = router({
       const { token } = store.getState().auth;
       if (!baseUrl || !token) throw new Error('Not authenticated');
       configureOpenAPI(baseUrl, token);
-      const trimmed = input.imageBase64.trim();
-      const dataUrl = /^data:[^;]+;base64,(.+)$/is.exec(trimmed);
-      const b64 = (dataUrl ? dataUrl[1] : trimmed).replace(/\s/g, '');
-      if (!b64.length) throw new Error('Empty image data');
+      const b64 = normalizeTwitarrImageBase64(input.imageBase64);
       return twitarrFetchJson<unknown>('POST', '/user/image', {
         filename: null,
         image: b64,
@@ -627,6 +625,46 @@ export const appRouter = router({
       const result = await ForumService.forumPostGet(normalizeTwitarrUuid(input.postId));
       const viewed = getForumViewedIdSet(baseUrl, username);
       return mergeForumPayloadReadState(result as unknown, viewed);
+    }),
+
+  /**
+   * `POST /api/v3/forum/:forumID/create` — append a message to a forum thread (`PostContentData`).
+   * Each image is `ImageUploadData` (`filename: null`, `image` = base64 for Swift `Data`).
+   */
+  forumPostCreate: publicProcedure
+    .input(
+      z.object({
+        forumId: z.string().min(1),
+        text: z.string().min(1).max(2048),
+        postAsModerator: z.boolean().optional(),
+        postAsTwitarrTeam: z.boolean().optional(),
+        images: z
+          .array(
+            z.object({
+              /** Raw base64 or data URL — normalized like `userImageUpload`. */
+              imageBase64: z.string().min(1).max(14_000_000),
+            }),
+          )
+          .max(8)
+          .optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const fid = normalizeTwitarrUuid(input.forumId);
+      const images = (input.images ?? []).map((im) => ({
+        filename: null as null,
+        image: normalizeTwitarrImageBase64(im.imageBase64),
+      }));
+      return twitarrFetchJson<unknown>('POST', `/forum/${encodeURIComponent(fid)}/create`, {
+        text: input.text,
+        images,
+        postAsModerator: input.postAsModerator ?? false,
+        postAsTwitarrTeam: input.postAsTwitarrTeam ?? false,
+      });
     }),
 
   /** Persist locally viewed forum post ids (per server + username); merged into forumGet / forumPostGet as `cephalopodRead`. */

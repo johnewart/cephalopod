@@ -4,25 +4,15 @@ import { SettingOutlined, UploadOutlined } from '@ant-design/icons';
 import { trpc } from '../lib/trpc';
 import { useStore } from '../hooks/useStore';
 import { twitarrImageThumbUrl, twitarrUserIdenticonUrl } from '../lib/twitarrImage';
+import { arrayBufferToBase64, TWITARR_IMAGE_UPLOAD_MAX_BYTES } from '../lib/imageBase64';
 import { profileResponseToFormDefaults, type ProfileFormDefaults } from '../lib/twitarrProfile';
 
 const { Text, Paragraph } = Typography;
 
 type DinnerTeam = 'red' | 'gold' | 'sro';
 
-const AVATAR_MAX_BYTES = 8 * 1024 * 1024;
+const AVATAR_MAX_BYTES = TWITARR_IMAGE_UPLOAD_MAX_BYTES;
 const AVATAR_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif';
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    const slice = bytes.subarray(i, i + chunk);
-    binary += String.fromCharCode.apply(null, slice as unknown as number[]);
-  }
-  return btoa(binary);
-}
 
 /** Optional string fields: empty OK; if set, match Twitarr `UserProfileUploadData` validations. */
 function optionalLen(min: number, max: number, label: string) {

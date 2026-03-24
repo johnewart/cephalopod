@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Alert, Avatar, Breadcrumb, Button, Empty, Image, List, Spin, Typography } from 'antd';
+import { UploadOutlined } from '@ant-design/icons';
+import { Alert, Avatar, Breadcrumb, Button, Empty, Image, Input, List, Spin, Typography, message } from 'antd';
 import { IconLayoutList } from '@tabler/icons-react';
 import Markdown from 'react-markdown';
 import type { Components } from 'react-markdown';
@@ -11,10 +12,27 @@ import {
   swapTwitarrThumbToFull,
 } from '../lib/twitarrImage';
 import { useStore } from '../hooks/useStore';
+import { validateForumImageAttachmentCount, validateForumPostDraft } from '../lib/forumPostDraft';
+import {
+  arrayBufferToBase64,
+  FORUM_POST_IMAGE_ACCEPT,
+  FORUM_POST_IMAGE_MAX_BYTES,
+  FORUM_POST_MAX_IMAGES,
+} from '../lib/imageBase64';
 
 function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
 }
+
+function newLocalId(): string {
+  const c = globalThis.crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+type PendingForumImage = { id: string; file: File; objectUrl: string };
+
+const FORUM_IMAGE_ACCEPT_TYPES = new Set(FORUM_POST_IMAGE_ACCEPT.split(',').map((s) => s.trim()));
 
 /** Pull the first array of objects found on the root or under preferred keys. */
 function extractObjectList(data: unknown, preferredKeys: string[]): Record<string, unknown>[] {
@@ -398,8 +416,14 @@ function ForumPostViewTracker({
 export function ForumsView() {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [forumId, setForumId] = useState<string | null>(null);
+  const [threadReplyDraft, setThreadReplyDraft] = useState('');
+  const [threadReplyError, setThreadReplyError] = useState<string | null>(null);
+  const [pendingForumImages, setPendingForumImages] = useState<PendingForumImage[]>([]);
   const baseUrl = useStore((s) => s.server.baseUrl ?? '');
   const threadScrollRef = useRef<HTMLDivElement>(null);
+  const forumAttachmentInputRef = useRef<HTMLInputElement>(null);
+  const pendingForumImagesRef = useRef(pendingForumImages);
+  pendingForumImagesRef.current = pendingForumImages;
   const markPendingRef = useRef<Set<string>>(new Set());
   const markFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -408,6 +432,19 @@ export function ForumsView() {
     onSuccess: () => {
       if (forumId) void utils.forumGet.invalidate({ forumId });
     },
+  });
+
+  const forumPostCreateMutation = trpc.forumPostCreate.useMutation({
+    onSuccess: () => {
+      if (forumId) void utils.forumGet.invalidate({ forumId });
+      setThreadReplyDraft('');
+      setThreadReplyError(null);
+      setPendingForumImages((prev) => {
+        for (const p of prev) URL.revokeObjectURL(p.objectUrl);
+        return [];
+      });
+    },
+    onError: (e) => setThreadReplyError(e.message),
   });
 
   const flushMarkViewed = useCallback(() => {
@@ -434,6 +471,22 @@ export function ForumsView() {
       markFlushTimerRef.current = null;
     }
   }, [forumId]);
+
+  useEffect(() => {
+    setThreadReplyDraft('');
+    setThreadReplyError(null);
+    setPendingForumImages((prev) => {
+      for (const p of prev) URL.revokeObjectURL(p.objectUrl);
+      return [];
+    });
+  }, [forumId]);
+
+  useEffect(
+    () => () => {
+      for (const p of pendingForumImagesRef.current) URL.revokeObjectURL(p.objectUrl);
+    },
+    [],
+  );
 
   const categoriesQuery = trpc.forumCategories.useQuery(undefined, {
     staleTime: 5 * 60 * 1000,
@@ -816,6 +869,198 @@ export function ForumsView() {
                         </ForumPostViewTracker>
                       );
                     })}
+                  </div>
+                  <div
+                    style={{
+                      flexShrink: 0,
+                      marginTop: 12,
+                      paddingTop: 12,
+                      borderTop: '1px solid #353942',
+                    }}
+                  >
+                    <Typography.Text
+                      style={{
+                        display: 'block',
+                        marginBottom: 8,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: '#6d7178',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      Reply to thread
+                    </Typography.Text>
+                    <Input.TextArea
+                      value={threadReplyDraft}
+                      onChange={(e) => {
+                        setThreadReplyDraft(e.target.value);
+                        if (threadReplyError) setThreadReplyError(null);
+                      }}
+                      placeholder="Write a message (markdown supported when rendered)…"
+                      autoSize={{ minRows: 3, maxRows: 12 }}
+                      disabled={forumPostCreateMutation.isPending}
+                      style={{
+                        background: '#1b1e24',
+                        borderColor: '#3d4149',
+                        color: '#EFECE2',
+                      }}
+                    />
+                    <input
+                      ref={forumAttachmentInputRef}
+                      type="file"
+                      accept={FORUM_POST_IMAGE_ACCEPT}
+                      multiple
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const picked = Array.from(e.target.files ?? []);
+                        e.target.value = '';
+                        if (picked.length === 0) return;
+                        setPendingForumImages((prev) => {
+                          const next = [...prev];
+                          for (const file of picked) {
+                            if (!FORUM_IMAGE_ACCEPT_TYPES.has(file.type)) {
+                              message.error('Only JPEG, PNG, WebP, or GIF images can be attached.');
+                              continue;
+                            }
+                            if (file.size > FORUM_POST_IMAGE_MAX_BYTES) {
+                              message.error(
+                                `Each image must be at most ${FORUM_POST_IMAGE_MAX_BYTES / (1024 * 1024)} MB.`,
+                              );
+                              continue;
+                            }
+                            if (next.length >= FORUM_POST_MAX_IMAGES) {
+                              message.warning(`You can attach at most ${FORUM_POST_MAX_IMAGES} images per post.`);
+                              break;
+                            }
+                            next.push({
+                              id: newLocalId(),
+                              file,
+                              objectUrl: URL.createObjectURL(file),
+                            });
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                    {pendingForumImages.length > 0 ? (
+                      <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {pendingForumImages.map((p) => (
+                          <div
+                            key={p.id}
+                            style={{
+                              position: 'relative',
+                              width: 72,
+                              height: 72,
+                              flexShrink: 0,
+                            }}
+                          >
+                            <img
+                              src={p.objectUrl}
+                              alt=""
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                                borderRadius: 8,
+                                border: '1px solid #3d4149',
+                              }}
+                            />
+                            <Button
+                              size="small"
+                              type="text"
+                              danger
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                right: 0,
+                                minWidth: 26,
+                                height: 26,
+                                padding: 0,
+                                lineHeight: 1,
+                                color: '#fff',
+                                textShadow: '0 0 4px #000',
+                              }}
+                              disabled={forumPostCreateMutation.isPending}
+                              onClick={() => {
+                                URL.revokeObjectURL(p.objectUrl);
+                                setPendingForumImages((prev) => prev.filter((x) => x.id !== p.id));
+                              }}
+                            >
+                              ×
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                      <Button
+                        type="primary"
+                        loading={forumPostCreateMutation.isPending}
+                        disabled={!forumId || !threadReplyDraft.trim()}
+                        onClick={async () => {
+                          if (!forumId) return;
+                          const trimmed = threadReplyDraft.trim();
+                          const v = validateForumPostDraft(trimmed);
+                          if (v) {
+                            setThreadReplyError(v);
+                            return;
+                          }
+                          const imgErr = validateForumImageAttachmentCount(pendingForumImages.length);
+                          if (imgErr) {
+                            setThreadReplyError(imgErr);
+                            return;
+                          }
+                          setThreadReplyError(null);
+                          let images: { imageBase64: string }[] | undefined;
+                          try {
+                            images =
+                              pendingForumImages.length > 0
+                                ? await Promise.all(
+                                    pendingForumImages.map(async (p) => ({
+                                      imageBase64: arrayBufferToBase64(await p.file.arrayBuffer()),
+                                    })),
+                                  )
+                                : undefined;
+                          } catch {
+                            setThreadReplyError(
+                              'Could not read an image file. Try removing attachments and adding them again.',
+                            );
+                            return;
+                          }
+                          forumPostCreateMutation.mutate({
+                            forumId,
+                            text: trimmed,
+                            ...(images && images.length > 0 ? { images } : {}),
+                          });
+                        }}
+                      >
+                        Post reply
+                      </Button>
+                      <Button
+                        type="default"
+                        icon={<UploadOutlined />}
+                        disabled={
+                          forumPostCreateMutation.isPending || pendingForumImages.length >= FORUM_POST_MAX_IMAGES
+                        }
+                        onClick={() => forumAttachmentInputRef.current?.click()}
+                      >
+                        Add images
+                      </Button>
+                      <Typography.Text type="secondary" style={{ fontSize: 12, color: '#7A7490' }}>
+                        Max 2048 characters, 25 lines. Up to {FORUM_POST_MAX_IMAGES} images (
+                        {FORUM_POST_IMAGE_MAX_BYTES / (1024 * 1024)} MB each). Fewer may be allowed for your account on
+                        the server.
+                      </Typography.Text>
+                    </div>
+                    {threadReplyError ? (
+                      <Alert
+                        style={{ marginTop: 10 }}
+                        type="error"
+                        showIcon
+                        message={threadReplyError}
+                      />
+                    ) : null}
                   </div>
                   <details style={{ marginTop: 12, flexShrink: 0 }}>
                     <summary style={{ color: '#7A7490', cursor: 'pointer', fontSize: 12 }}>Raw API response</summary>
