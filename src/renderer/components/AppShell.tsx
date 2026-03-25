@@ -52,8 +52,11 @@ export function AppShell({
   const username = useStore((s) => s.auth.username);
   const baseUrl = useStore((s) => s.server.baseUrl ?? '');
   const logoutMutation = trpc.logout.useMutation();
-  const profileQuery = trpc.userProfileGet.useQuery();
+  const profileQuery = trpc.userProfileGet.useQuery(undefined, {
+    staleTime: 15 * 60 * 1000,
+  });
   const fezJoinedQuery = trpc.fezJoined.useQuery(undefined, {
+    staleTime: 30_000,
     refetchInterval: 45_000,
     refetchOnWindowFocus: true,
   });

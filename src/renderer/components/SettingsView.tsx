@@ -37,7 +37,9 @@ export function SettingsView() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
 
-  const profileQuery = trpc.userProfileGet.useQuery();
+  const profileQuery = trpc.userProfileGet.useQuery(undefined, {
+    staleTime: 15 * 60 * 1000,
+  });
   const utils = trpc.useUtils();
 
   const profileMutation = trpc.userProfileUpdate.useMutation({

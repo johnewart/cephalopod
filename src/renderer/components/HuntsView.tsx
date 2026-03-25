@@ -46,6 +46,7 @@ export function HuntsView() {
   const [answerDraft, setAnswerDraft] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  /** Shorter than app defaults — hunt state and call-ins change quickly while playing. */
   const listQuery = trpc.huntsList.useQuery(undefined, { staleTime: 30_000 });
   const huntQuery = trpc.huntGet.useQuery(
     { huntId: selectedHuntId ?? '' },

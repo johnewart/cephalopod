@@ -15,6 +15,13 @@ import { store } from '../store';
 import { getForumViewedIdSet, markForumPostsViewed, mergeForumPayloadReadState } from '../forumViewedPosts';
 import { normalizeTwitarrImageBase64 } from '../normalizeTwitarrImageBase64';
 import { normalizeTwitarrUuid } from '../normalizeTwitarrUuid';
+import {
+  extractForumPosts,
+  nextForumThreadStart,
+  parseForumPaginator,
+  type ForumThreadPaginator,
+} from '../forumThreadPagination';
+import { extractForumSearchThreadRows, sumUnreadPostsByCategoryId } from '../../shared/forumUnread';
 
 /** Configure OpenAPI from store state before API calls */
 function configureOpenAPI(baseUrl: string, token?: string | null) {
@@ -28,12 +35,60 @@ function twitarrApiRoot(): string {
   return root;
 }
 
+/** Dedupes identical GETs within TTL (profile + paged forum helpers). Cleared on mutating calls here and on auth change. */
+const TWITARR_GET_CACHE_TTL_MS = 30_000;
+const TWITARR_GET_CACHE_MAX = 96;
+const twitarrGetCache = new Map<string, { expiresAt: number; payload: unknown }>();
+let twitarrGetCacheAuthKey = '';
+
+export function clearTwitarrGetCache(): void {
+  twitarrGetCache.clear();
+}
+
+function twitarrGetCacheStorageKey(url: string, token: string): string {
+  return `${token.slice(0, 16)}|${url}`;
+}
+
+function pruneTwitarrGetCache(now: number): void {
+  for (const [k, v] of twitarrGetCache) {
+    if (v.expiresAt <= now) twitarrGetCache.delete(k);
+  }
+  while (twitarrGetCache.size > TWITARR_GET_CACHE_MAX) {
+    const first = twitarrGetCache.keys().next().value as string | undefined;
+    if (first === undefined) break;
+    twitarrGetCache.delete(first);
+  }
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 async function twitarrFetchJson<T>(method: string, path: string, body?: unknown): Promise<T> {
   const { baseUrl } = store.getState().server;
   const { token } = store.getState().auth;
   if (!baseUrl || !token) throw new Error('Not authenticated');
   configureOpenAPI(baseUrl, token);
   const url = `${twitarrApiRoot()}${path.startsWith('/') ? path : `/${path}`}`;
+
+  const authKey = `${baseUrl}::${token}`;
+  if (authKey !== twitarrGetCacheAuthKey) {
+    clearTwitarrGetCache();
+    twitarrGetCacheAuthKey = authKey;
+  }
+
+  const now = Date.now();
+  if (method === 'GET') {
+    pruneTwitarrGetCache(now);
+    const ck = twitarrGetCacheStorageKey(url, token);
+    const hit = twitarrGetCache.get(ck);
+    if (hit && hit.expiresAt > now) {
+      twitarrGetCache.delete(ck);
+      twitarrGetCache.set(ck, hit);
+      return cloneJson(hit.payload) as T;
+    }
+  }
+
   const res = await fetch(url, {
     method,
     headers: {
@@ -43,6 +98,11 @@ async function twitarrFetchJson<T>(method: string, path: string, body?: unknown)
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+
+  if (method !== 'GET' && res.ok) {
+    clearTwitarrGetCache();
+  }
+
   if (!res.ok) {
     let detail = '';
     try {
@@ -70,7 +130,107 @@ async function twitarrFetchJson<T>(method: string, path: string, body?: unknown)
       /* keep outer string */
     }
   }
+
+  if (method === 'GET') {
+    const ck = twitarrGetCacheStorageKey(url, token);
+    twitarrGetCache.set(ck, { expiresAt: now + TWITARR_GET_CACHE_TTL_MS, payload: parsed });
+    pruneTwitarrGetCache(Date.now());
+  }
+
   return parsed as T;
+}
+
+/** Matches Swiftarr default `maximumForumPosts` (clamped server-side; fewer round-trips). */
+const FORUM_THREAD_PAGE_LIMIT = 200;
+const FORUM_THREAD_MAX_PAGES = 500;
+
+/**
+ * Loads a full forum thread by following Swiftarr pagination: advance `start` by
+ * `paginator.start + paginator.limit` until all posts are fetched. Uses explicit
+ * `start`/`limit` so the server does not jump to "last read" for partial loads.
+ */
+async function fetchForumThreadWithAllPosts(forumId: string): Promise<unknown> {
+  const fid = encodeURIComponent(forumId);
+  const allPosts: unknown[] = [];
+  let mergedRoot: Record<string, unknown> | null = null;
+  let totalFromServer = 0;
+  let start = 0;
+  let pagesFetched = 0;
+  let lastPaginator: ForumThreadPaginator | null = null;
+
+  while (pagesFetched < FORUM_THREAD_MAX_PAGES) {
+    pagesFetched += 1;
+    const page = await twitarrFetchJson<unknown>(
+      'GET',
+      `/forum/${fid}?start=${start}&limit=${FORUM_THREAD_PAGE_LIMIT}`,
+    );
+    if (typeof page !== 'object' || page === null || Array.isArray(page)) {
+      throw new Error('Invalid forum thread response');
+    }
+    if (!mergedRoot) {
+      mergedRoot = JSON.parse(JSON.stringify(page)) as Record<string, unknown>;
+    }
+    allPosts.push(...extractForumPosts(page));
+
+    const pg = parseForumPaginator(page);
+    if (!pg) break;
+
+    lastPaginator = pg;
+    totalFromServer = pg.total;
+    const next = nextForumThreadStart(pg);
+    if (next === null) break;
+    start = next;
+  }
+
+  if (
+    pagesFetched >= FORUM_THREAD_MAX_PAGES &&
+    lastPaginator != null &&
+    nextForumThreadStart(lastPaginator) !== null
+  ) {
+    throw new Error('Forum thread is too long to load at once (exceeded maximum page fetches).');
+  }
+
+  if (!mergedRoot) throw new Error('Invalid forum thread response');
+
+  mergedRoot.posts = allPosts;
+  const total = totalFromServer > 0 ? totalFromServer : allPosts.length;
+  mergedRoot.paginator = { total, start: 0, limit: total };
+  return mergedRoot;
+}
+
+/**
+ * Pages through `GET /api/v3/forum/unread` (`ForumSearchData`) until all forum rows are loaded.
+ */
+async function fetchAllForumUnreadForumRows(): Promise<Record<string, unknown>[]> {
+  const rows: Record<string, unknown>[] = [];
+  let start = 0;
+  let pagesFetched = 0;
+  let lastPaginator: ForumThreadPaginator | null = null;
+
+  while (pagesFetched < FORUM_THREAD_MAX_PAGES) {
+    pagesFetched += 1;
+    const page = await twitarrFetchJson<unknown>(
+      'GET',
+      `/forum/unread?start=${start}&limit=${FORUM_THREAD_PAGE_LIMIT}`,
+    );
+    rows.push(...extractForumSearchThreadRows(page));
+
+    const pg = parseForumPaginator(page);
+    if (!pg) break;
+    lastPaginator = pg;
+    const next = nextForumThreadStart(pg);
+    if (next === null) break;
+    start = next;
+  }
+
+  if (
+    pagesFetched >= FORUM_THREAD_MAX_PAGES &&
+    lastPaginator != null &&
+    nextForumThreadStart(lastPaginator) !== null
+  ) {
+    throw new Error('Forum unread list is too long to load at once (exceeded maximum page fetches).');
+  }
+  return rows;
 }
 
 /**
@@ -225,6 +385,8 @@ export const appRouter = router({
       configureOpenAPI(baseUrl, token);
       await AuthService.authLogout();
     }
+    clearTwitarrGetCache();
+    twitarrGetCacheAuthKey = '';
     store.setState((s) => ({
       ...s,
       auth: {
@@ -467,13 +629,13 @@ export const appRouter = router({
     }),
 
   /**
-   * Create a seamail fez with a title, then invite each user via `POST /fez/:id/user/:user/add`.
-   * Create body uses `{ title }`; servers that expect a different shape can be extended later.
+   * Create a seamail via Swiftarr `POST /fez/create` using `FezContentData` (requires `fezType`, etc.).
+   * Aligns with `SiteSeamailController.seamailCreatePostHandler`: `closed` fez, `initialUsers` = invited UUIDs (creator added server-side).
    */
   fezCreateSeamail: publicProcedure
     .input(
       z.object({
-        title: z.string().min(1).max(200).trim(),
+        title: z.string().min(2).max(100).trim(),
         userIds: z.array(z.string().min(1)).min(1).max(32),
       }),
     )
@@ -483,35 +645,26 @@ export const appRouter = router({
       if (!baseUrl || !token) throw new Error('Not authenticated');
       configureOpenAPI(baseUrl, token);
 
-      let created: unknown;
-      let usedTitleInCreate = true;
-      try {
-        created = await twitarrFetchJson<unknown>('POST', '/fez/create', { title: input.title });
-      } catch {
-        usedTitleInCreate = false;
-        created = await twitarrFetchJson<unknown>('POST', '/fez/create', {});
-      }
+      const initialUsers = input.userIds.map((id) => normalizeTwitarrUuid(id.trim()));
+      const fezContent = {
+        fezType: 'closed',
+        title: input.title,
+        info: '',
+        startTime: null,
+        endTime: null,
+        location: null,
+        minCapacity: 0,
+        maxCapacity: 0,
+        initialUsers,
+        createdByModerator: false,
+        createdByTwitarrTeam: false,
+      };
+
+      const created = await twitarrFetchJson<unknown>('POST', '/fez/create', fezContent);
 
       const fezIdRaw = pickCreatedFezId(created);
       if (!fezIdRaw) throw new Error('Server did not return a new conversation id');
       const fezId = normalizeTwitarrUuid(fezIdRaw);
-
-      if (!usedTitleInCreate) {
-        try {
-          await twitarrFetchJson<unknown>('POST', `/fez/${encodeURIComponent(fezId)}`, { title: input.title });
-        } catch {
-          /* Fez update shape varies; title may stay default until user edits in-app */
-        }
-      }
-
-      for (const uid of input.userIds) {
-        const u = normalizeTwitarrUuid(uid.trim());
-        try {
-          await FezService.fezUserAdd(fezId, u);
-        } catch {
-          /* Often already a participant if create accepted `users`; ignore */
-        }
-      }
 
       return { fezId };
     }),
@@ -540,6 +693,46 @@ export const appRouter = router({
         input?.locationName
       );
       return result as unknown;
+    }),
+
+  photostreamPlacenames: publicProcedure.query(async () => {
+    const { baseUrl } = store.getState().server;
+    const { token } = store.getState().auth;
+    if (!baseUrl || !token) throw new Error('Not authenticated');
+    configureOpenAPI(baseUrl, token);
+    const result = await PhotostreamService.photostreamPlacenames();
+    return result as unknown;
+  }),
+
+  /**
+   * `POST /api/v3/photostream/upload` — `PhotostreamUploadData` (image as base64 → Swift `Data`,
+   * `createdAt` ISO8601, optional `eventID` / `locationName` from `photostreamPlacenames`).
+   */
+  photostreamUpload: publicProcedure
+    .input(
+      z.object({
+        imageBase64: z.string().min(1).max(14_000_000),
+        /** ISO8601 capture time; defaults to now. */
+        createdAt: z.string().optional(),
+        eventId: z.string().min(1).optional(),
+        locationName: z.string().min(1).max(500).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const { baseUrl } = store.getState().server;
+      const { token } = store.getState().auth;
+      if (!baseUrl || !token) throw new Error('Not authenticated');
+      configureOpenAPI(baseUrl, token);
+      const image = normalizeTwitarrImageBase64(input.imageBase64);
+      const createdAt = input.createdAt?.trim() || new Date().toISOString();
+      const body: Record<string, unknown> = { image, createdAt };
+      if (input.eventId?.trim()) {
+        body.eventID = normalizeTwitarrUuid(input.eventId.trim());
+      } else if (input.locationName?.trim()) {
+        body.locationName = input.locationName.trim();
+      }
+      await twitarrFetchJson<unknown>('POST', '/photostream/upload', body);
+      return { ok: true as const };
     }),
 
   // ---- Events (schedule) ----
@@ -610,10 +803,20 @@ export const appRouter = router({
       const { token, username } = store.getState().auth;
       if (!baseUrl || !token) throw new Error('Not authenticated');
       configureOpenAPI(baseUrl, token);
-      const result = await ForumService.forumGet(normalizeTwitarrUuid(input.forumId));
+      const result = await fetchForumThreadWithAllPosts(normalizeTwitarrUuid(input.forumId));
       const viewed = getForumViewedIdSet(baseUrl, username);
       return mergeForumPayloadReadState(result as unknown, viewed);
     }),
+
+  /** Sums unread post counts per category from all rows returned by `GET /api/v3/forum/unread`. */
+  forumUnreadByCategory: publicProcedure.query(async () => {
+    const { baseUrl } = store.getState().server;
+    const { token } = store.getState().auth;
+    if (!baseUrl || !token) throw new Error('Not authenticated');
+    configureOpenAPI(baseUrl, token);
+    const rows = await fetchAllForumUnreadForumRows();
+    return { unreadByCategoryId: sumUnreadPostsByCategoryId(rows) };
+  }),
 
   forumPostGet: publicProcedure
     .input(z.object({ postId: z.string().min(1) }))

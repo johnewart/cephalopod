@@ -333,9 +333,7 @@ function EventsDayGantt({
 }
 
 export function EventsCalendarView() {
-  const query = trpc.eventsList.useQuery(undefined, {
-    staleTime: 5 * 60 * 1000,
-  });
+  const query = trpc.eventsList.useQuery();
   const [selected, setSelected] = useState<Dayjs>(() => dayjs());
   const [search, setSearch] = useState('');
   const [futureOnly, setFutureOnly] = useState(true);

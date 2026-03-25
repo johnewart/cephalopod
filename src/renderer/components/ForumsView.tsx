@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { UploadOutlined } from '@ant-design/icons';
-import { Alert, Avatar, Breadcrumb, Button, Empty, Image, Input, List, Spin, Typography, message } from 'antd';
+import { Alert, Avatar, Badge, Breadcrumb, Button, Empty, Image, Input, List, Spin, Typography, message } from 'antd';
 import { IconLayoutList } from '@tabler/icons-react';
 import Markdown from 'react-markdown';
 import type { Components } from 'react-markdown';
@@ -19,6 +19,7 @@ import {
   FORUM_POST_IMAGE_MAX_BYTES,
   FORUM_POST_MAX_IMAGES,
 } from '../lib/imageBase64';
+import { forumListRowUnreadCount, normalizeForumEntityId } from '../../shared/forumUnread';
 
 function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -431,12 +432,16 @@ export function ForumsView() {
   const markViewedMutation = trpc.forumPostsMarkViewed.useMutation({
     onSuccess: () => {
       if (forumId) void utils.forumGet.invalidate({ forumId });
+      void utils.forumUnreadByCategory.invalidate();
+      if (categoryId) void utils.forumCategoryForums.invalidate({ categoryId });
     },
   });
 
   const forumPostCreateMutation = trpc.forumPostCreate.useMutation({
     onSuccess: () => {
       if (forumId) void utils.forumGet.invalidate({ forumId });
+      void utils.forumUnreadByCategory.invalidate();
+      if (categoryId) void utils.forumCategoryForums.invalidate({ categoryId });
       setThreadReplyDraft('');
       setThreadReplyError(null);
       setPendingForumImages((prev) => {
@@ -488,9 +493,7 @@ export function ForumsView() {
     [],
   );
 
-  const categoriesQuery = trpc.forumCategories.useQuery(undefined, {
-    staleTime: 5 * 60 * 1000,
-  });
+  const categoriesQuery = trpc.forumCategories.useQuery();
 
   const forumsInCategoryQuery = trpc.forumCategoryForums.useQuery(
     { categoryId: categoryId ?? '' },
@@ -501,6 +504,10 @@ export function ForumsView() {
     { forumId: forumId ?? '' },
     { enabled: !!forumId, retry: false }
   );
+
+  const forumUnreadByCategoryQuery = trpc.forumUnreadByCategory.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
+  });
 
   const categories = useMemo(() => {
     const raw = categoriesQuery.data as unknown;
@@ -555,6 +562,12 @@ export function ForumsView() {
       'Forum';
     return { threadTitle: title, items: withStarter, raw };
   }, [forumDetailQuery.data, forumTitle]);
+
+  useEffect(() => {
+    if (!forumDetailQuery.isSuccess || !forumId || !categoryId) return;
+    void utils.forumCategoryForums.invalidate({ categoryId });
+    void utils.forumUnreadByCategory.invalidate();
+  }, [forumDetailQuery.isSuccess, forumDetailQuery.dataUpdatedAt, forumId, categoryId, utils]);
 
   const listErr = categoriesQuery.error?.message ?? forumsInCategoryQuery.error?.message;
 
@@ -656,22 +669,48 @@ export function ForumsView() {
                 size="small"
                 dataSource={categories}
                 locale={{ emptyText: <Empty description="No categories" style={{ margin: 16 }} /> }}
-                renderItem={(c) => (
-                  <List.Item
-                    style={{
-                      cursor: 'pointer',
-                      padding: '10px 14px',
-                      borderColor: '#353942',
-                      color: '#EFECE2',
-                    }}
-                    onClick={() => {
-                      setCategoryId(c.id);
-                      setForumId(null);
-                    }}
-                  >
-                    {c.title}
-                  </List.Item>
-                )}
+                renderItem={(c) => {
+                  const catUnread =
+                    forumUnreadByCategoryQuery.data?.unreadByCategoryId[normalizeForumEntityId(c.id)] ?? 0;
+                  return (
+                    <List.Item
+                      style={{
+                        cursor: 'pointer',
+                        padding: '10px 14px',
+                        borderColor: '#353942',
+                        color: '#EFECE2',
+                      }}
+                      onClick={() => {
+                        setCategoryId(c.id);
+                        setForumId(null);
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                          width: '100%',
+                          minWidth: 0,
+                        }}
+                      >
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.title}
+                        </span>
+                        {catUnread > 0 ? (
+                          <Badge
+                            count={catUnread}
+                            showZero={false}
+                            size="small"
+                            color="#6F458F"
+                            overflowCount={99}
+                          />
+                        ) : null}
+                      </span>
+                    </List.Item>
+                  );
+                }}
               />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -703,6 +742,7 @@ export function ForumsView() {
                     locale={{ emptyText: <Empty description="No forums in category" style={{ margin: 16 }} /> }}
                     renderItem={(f) => {
                       const selected = f.id === forumId;
+                      const threadUnread = forumListRowUnreadCount(f.raw);
                       return (
                         <List.Item
                           style={{
@@ -715,7 +755,29 @@ export function ForumsView() {
                           }}
                           onClick={() => setForumId(f.id)}
                         >
-                          {f.title}
+                          <span
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 8,
+                              width: '100%',
+                              minWidth: 0,
+                            }}
+                          >
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {f.title}
+                            </span>
+                            {threadUnread > 0 ? (
+                              <Badge
+                                count={threadUnread}
+                                showZero={false}
+                                size="small"
+                                color="#6F458F"
+                                overflowCount={99}
+                              />
+                            ) : null}
+                          </span>
                         </List.Item>
                       );
                     }}

@@ -1,9 +1,25 @@
-import { useMemo } from 'react';
-import { Alert, Empty, Image, Masonry, Spin, Typography } from 'antd';
-import { IconPhoto } from '@tabler/icons-react';
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import {
+  Alert,
+  Button,
+  Empty,
+  Image,
+  Masonry,
+  Modal,
+  Select,
+  Spin,
+  Typography,
+  message,
+} from 'antd';
+import { IconPhoto, IconUpload } from '@tabler/icons-react';
 import { trpc } from '../lib/trpc';
 import { useStore } from '../hooks/useStore';
 import { swapTwitarrThumbToFull, twitarrImageUrl } from '../lib/twitarrImage';
+import {
+  FORUM_POST_IMAGE_ACCEPT,
+  TWITARR_IMAGE_UPLOAD_MAX_BYTES,
+  arrayBufferToBase64,
+} from '../lib/imageBase64';
 
 const PAGE_LIMIT = 48;
 
@@ -85,9 +101,93 @@ function pickCaption(item: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === 'object' && x !== null && !Array.isArray(x);
+}
+
+/** `PhotostreamLocationData` from `GET /api/v3/photostream/placenames`. */
+function parsePhotostreamPlacenames(raw: unknown): {
+  events: { id: string; title: string }[];
+  locations: string[];
+} {
+  if (!isRecord(raw)) return { events: [], locations: [] };
+  const locRaw = raw.locations;
+  const locations = Array.isArray(locRaw)
+    ? locRaw.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+    : [];
+  const evRaw = raw.events;
+  const events: { id: string; title: string }[] = [];
+  if (Array.isArray(evRaw)) {
+    for (const row of evRaw) {
+      if (!isRecord(row)) continue;
+      const id = row.eventID ?? row.eventId ?? row.event_id;
+      const title = row.title;
+      const idStr =
+        typeof id === 'string' ? id : typeof id === 'number' && Number.isFinite(id) ? String(id) : '';
+      if (idStr && typeof title === 'string' && title.trim()) {
+        events.push({ id: idStr, title: title.trim() });
+      }
+    }
+  }
+  return { events, locations };
+}
+
+function decodeTagSelection(value: string | undefined): { eventId?: string; locationName?: string } {
+  if (!value) return {};
+  if (value.startsWith('e:')) return { eventId: value.slice(2).trim() };
+  if (value.startsWith('l:')) {
+    try {
+      const name = decodeURIComponent(value.slice(2));
+      return name.trim() ? { locationName: name.trim() } : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 export function PhotostreamView() {
   const baseUrl = useStore((s) => s.server.baseUrl ?? '');
-  const query = trpc.photostreamList.useQuery({ start: 0, limit: PAGE_LIMIT });
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [tagValue, setTagValue] = useState<string | undefined>(undefined);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const utils = trpc.useUtils();
+
+  const query = trpc.photostreamList.useQuery(
+    { start: 0, limit: PAGE_LIMIT },
+    { staleTime: 10 * 60 * 1000 }
+  );
+
+  const placenamesQuery = trpc.photostreamPlacenames.useQuery(undefined, {
+    enabled: uploadOpen,
+    staleTime: 60_000,
+  });
+
+  const uploadMutation = trpc.photostreamUpload.useMutation({
+    onSuccess: () => {
+      message.success('Photo uploaded');
+      setUploadOpen(false);
+      setTagValue(undefined);
+      setPendingFile(null);
+      void utils.photostreamList.invalidate();
+      void utils.photostreamPlacenames.invalidate();
+    },
+    onError: (e) => message.error(e.message || 'Upload failed'),
+  });
+
+  const tagOptions = useMemo(() => {
+    const { events, locations } = parsePhotostreamPlacenames(placenamesQuery.data);
+    const evOpts = events.map((ev) => ({
+      value: `e:${ev.id}`,
+      label: `Event: ${ev.title}`,
+    }));
+    const locOpts = locations.map((loc) => ({
+      value: `l:${encodeURIComponent(loc)}`,
+      label: `Place: ${loc}`,
+    }));
+    return [...evOpts, ...locOpts];
+  }, [placenamesQuery.data]);
 
   const items = useMemo(() => {
     const raw = extractPhotoRecords(query.data);
@@ -110,10 +210,40 @@ export function PhotostreamView() {
       .filter((x): x is NonNullable<typeof x> => x != null);
   }, [query.data, baseUrl]);
 
-  const masonryItems = useMemo(
-    () => items.map((it) => ({ key: it.key, data: it })),
-    [items]
-  );
+  const masonryItems = useMemo(() => items.map((it) => ({ key: it.key, data: it })), [items]);
+
+  const onPickFile = useCallback(() => fileInputRef.current?.click(), []);
+
+  const onFileChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    if (!FORUM_POST_IMAGE_ACCEPT.split(',').some((t) => f.type === t.trim())) {
+      message.error('Use JPEG, PNG, WebP, or GIF.');
+      return;
+    }
+    if (f.size > TWITARR_IMAGE_UPLOAD_MAX_BYTES) {
+      message.error(`Image too large (max ${Math.round(TWITARR_IMAGE_UPLOAD_MAX_BYTES / (1024 * 1024))} MB).`);
+      return;
+    }
+    setPendingFile(f);
+  }, []);
+
+  const submitUpload = useCallback(async () => {
+    if (!pendingFile) {
+      message.warning('Choose a photo first.');
+      return;
+    }
+    const buf = await pendingFile.arrayBuffer();
+    const imageBase64 = arrayBufferToBase64(buf);
+    const { eventId, locationName } = decodeTagSelection(tagValue);
+    uploadMutation.mutate({
+      imageBase64,
+      createdAt: new Date().toISOString(),
+      eventId,
+      locationName,
+    });
+  }, [pendingFile, tagValue, uploadMutation]);
 
   if (query.isLoading) {
     return (
@@ -142,11 +272,22 @@ export function PhotostreamView() {
           color: '#EFECE2',
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          justifyContent: 'space-between',
+          gap: 12,
         }}
       >
-        <IconPhoto size={18} stroke={1.5} style={{ color: '#6F458F' }} />
-        Photostream
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <IconPhoto size={18} stroke={1.5} style={{ color: '#6F458F' }} />
+          Photostream
+        </span>
+        <Button
+          type="primary"
+          icon={<IconUpload size={16} stroke={1.5} />}
+          onClick={() => setUploadOpen(true)}
+          style={{ background: '#6F458F', borderColor: '#6F458F' }}
+        >
+          Upload
+        </Button>
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
         {items.length === 0 ? (
@@ -186,6 +327,52 @@ export function PhotostreamView() {
           </Image.PreviewGroup>
         )}
       </div>
+
+      <Modal
+        title="Upload to photostream"
+        open={uploadOpen}
+        onCancel={() => {
+          if (uploadMutation.isPending) return;
+          setUploadOpen(false);
+          setTagValue(undefined);
+          setPendingFile(null);
+        }}
+        onOk={() => void submitUpload()}
+        okText="Upload"
+        okButtonProps={{ loading: uploadMutation.isPending, disabled: !pendingFile }}
+        destroyOnClose
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 12 }}>
+          Tag with a current event or ship location from the server list (from{' '}
+          <code style={{ fontSize: 12 }}>/photostream/placenames</code>). The server may rate-limit uploads.
+        </Typography.Paragraph>
+        {placenamesQuery.isError ? (
+          <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={placenamesQuery.error.message} />
+        ) : null}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={FORUM_POST_IMAGE_ACCEPT}
+            style={{ display: 'none' }}
+            onChange={onFileChange}
+          />
+          <Button onClick={onPickFile} disabled={uploadMutation.isPending}>
+            {pendingFile ? `Selected: ${pendingFile.name}` : 'Choose photo…'}
+          </Button>
+          <Select
+            allowClear
+            placeholder="Tag: event or place (optional)"
+            loading={placenamesQuery.isLoading}
+            options={tagOptions}
+            value={tagValue}
+            onChange={(v) => setTagValue(v)}
+            style={{ width: '100%' }}
+            showSearch
+            optionFilterProp="label"
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

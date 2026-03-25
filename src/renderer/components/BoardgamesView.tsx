@@ -301,6 +301,7 @@ export function BoardgamesView() {
     return () => window.clearTimeout(t);
   }, [searchText]);
 
+  /** Tighter than app defaults — search/filters should feel responsive. */
   const listQuery = trpc.boardgamesList.useQuery(
     {
       search: debouncedSearch || undefined,
@@ -336,7 +337,7 @@ export function BoardgamesView() {
 
   const expansionsQuery = trpc.boardgameExpansions.useQuery(
     { gameId: detailId ?? '' },
-    { enabled: Boolean(detailId && hasExpansions) },
+    { enabled: Boolean(detailId && hasExpansions), staleTime: 10 * 60 * 1000 },
   );
 
   const expansionGames = useMemo(() => {

@@ -166,8 +166,8 @@ export function SeamailNewConversationModal({ open, onClose, onCreated }: Seamai
 
   const handleSubmit = () => {
     const t = title.trim();
-    if (!t) {
-      message.warning('Enter a conversation title');
+    if (t.length < 2) {
+      message.warning('Title must be at least 2 characters');
       return;
     }
     if (selected.length === 0) {

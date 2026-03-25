@@ -6,6 +6,7 @@ import { createHTTPServer } from '@trpc/server/adapters/standalone';
 import cors from 'cors';
 import { createZustandBridge } from '@zubridge/electron/main';
 import { appRouter } from './api/router';
+import { loadPersistedSession, persistSessionSnapshot } from './sessionPersistence';
 import { store } from './store';
 
 /** Port for tRPC HTTP server (avoid 5173-5179 used by Vite) */
@@ -103,8 +104,15 @@ const trpcServer = createHTTPServer({
     });
   },
 });
-trpcServer.listen(TRPC_PORT);
-console.log('[Cephalopod] tRPC HTTP server listening on port', TRPC_PORT);
+
+let sessionPersistTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePersistSession(): void {
+  if (sessionPersistTimer) clearTimeout(sessionPersistTimer);
+  sessionPersistTimer = setTimeout(() => {
+    sessionPersistTimer = null;
+    persistSessionSnapshot(store.getState());
+  }, 100);
+}
 
 function createWindow() {
   const { browserOptions, rendererArgvFlags } = getWindowChromeOptions();
@@ -145,6 +153,26 @@ ipcMain.handle('ceph:set-dock-badge', (_event, count: unknown) => {
 });
 
 app.whenReady().then(() => {
+  const loaded = loadPersistedSession();
+  if (Object.keys(loaded).length > 0) {
+    store.setState((s) => ({
+      ...s,
+      server: loaded.server ?? s.server,
+      auth: loaded.auth ?? s.auth,
+    }));
+    console.log('[Cephalopod] restored session from disk', {
+      baseUrl: loaded.server?.baseUrl ? '[set]' : undefined,
+      loggedIn: loaded.auth?.isAuthenticated ?? false,
+    });
+  }
+
+  store.subscribe(() => {
+    schedulePersistSession();
+  });
+
+  trpcServer.listen(TRPC_PORT);
+  console.log('[Cephalopod] tRPC HTTP server listening on port', TRPC_PORT);
+
   if (process.platform === 'darwin' && appIconImage) app.dock.setIcon(appIconImage);
   createWindow();
 });

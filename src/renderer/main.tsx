@@ -9,7 +9,18 @@ import { trpc } from './lib/trpc';
 import App from './App';
 import './global.css';
 
-const queryClient = new QueryClient();
+/**
+ * Desktop: avoid refetch storms on every window focus; rely on longer `staleTime` and explicit
+ * `refetchInterval` / per-query overrides where data must stay fresh (seamail, open chats, etc.).
+ */
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 /** tRPC HTTP server port (must match main process) */
 const TRPC_PORT = 3847;
